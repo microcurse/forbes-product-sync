@@ -19,13 +19,36 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// Check if WooCommerce is active
+if (!in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_option('active_plugins')))) {
+    add_action('admin_notices', function() {
+        ?>
+        <div class="notice notice-error">
+            <p><?php _e('Forbes Product Sync requires WooCommerce to be installed and activated.', 'forbes-product-sync'); ?></p>
+        </div>
+        <?php
+    });
+    return;
+}
+
 // Define plugin constants
 define('FORBES_PRODUCT_SYNC_VERSION', '0.1.0');
 define('FORBES_PRODUCT_SYNC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('FORBES_PRODUCT_SYNC_PLUGIN_URL', plugin_dir_url(__FILE__));
 
 // Include required files
-require_once FORBES_PRODUCT_SYNC_PLUGIN_DIR . 'includes/class-forbes-product-sync.php';
+if (file_exists(FORBES_PRODUCT_SYNC_PLUGIN_DIR . 'includes/class-forbes-product-sync.php')) {
+    require_once FORBES_PRODUCT_SYNC_PLUGIN_DIR . 'includes/class-forbes-product-sync.php';
+} else {
+    add_action('admin_notices', function() {
+        ?>
+        <div class="notice notice-error">
+            <p><?php _e('Forbes Product Sync is missing required files. Please reinstall the plugin.', 'forbes-product-sync'); ?></p>
+        </div>
+        <?php
+    });
+    return;
+}
 
 /**
  * Initialize the plugin
@@ -38,13 +61,12 @@ function forbes_product_sync_init() {
     $plugin = new Forbes_Product_Sync();
     $plugin->init();
 }
-add_action('plugins_loaded', 'forbes_product_sync_init');
+add_action('plugins_loaded', 'forbes_product_sync_init', 20);
 
 /**
  * Activation hook
  */
 function forbes_product_sync_activate() {
-    // Add any activation tasks here
     if (!current_user_can('activate_plugins')) {
         return;
     }
@@ -65,7 +87,6 @@ register_activation_hook(__FILE__, 'forbes_product_sync_activate');
  * Deactivation hook
  */
 function forbes_product_sync_deactivate() {
-    // Add any deactivation tasks here
     if (!current_user_can('activate_plugins')) {
         return;
     }
