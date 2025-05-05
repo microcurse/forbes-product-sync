@@ -50,7 +50,7 @@ class Forbes_Product_Sync {
             'api_url' => '',
             'api_username' => '',
             'api_password' => '',
-            'sync_tag' => 'live-only'
+            'sync_tag' => 'sync-this'
         ));
         $this->init_hooks();
     }
@@ -291,9 +291,12 @@ class Forbes_Product_Sync {
      * Run product sync
      */
     private function run_product_sync() {
+        error_log('Starting product sync...');
         try {
             $query = $this->get_graphql_query();
+            error_log('GraphQL Query: ' . $query);
             $response = $this->make_api_request($query);
+            error_log('API Response: ' . print_r($response, true));
             
             if (is_wp_error($response)) {
                 throw new Exception($response->get_error_message());
@@ -314,6 +317,7 @@ class Forbes_Product_Sync {
                 'success'
             );
         } catch (Exception $e) {
+            error_log('Sync Exception: ' . $e->getMessage());
             add_settings_error(
                 'forbes_product_sync_messages',
                 'forbes_product_sync_message',

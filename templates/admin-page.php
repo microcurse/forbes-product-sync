@@ -76,16 +76,7 @@ if (!defined('ABSPATH')) {
         <?php submit_button(); ?>
     </form>
 
-    <div class="sync-actions">
-        <h2><?php esc_html_e('Manual Sync', 'forbes-product-sync'); ?></h2>
-        <form method="post" action="">
-            <?php wp_nonce_field('forbes_product_sync_action', 'forbes_product_sync_nonce'); ?>
-            <p>
-                <input type="submit" name="run_sync" class="button button-primary" 
-                       value="<?php esc_attr_e('Run Manual Sync', 'forbes-product-sync'); ?>">
-            </p>
-        </form>
-    </div>
+    <p><em><?php esc_html_e('To run a manual sync or view sync status, visit the Sync Status page.', 'forbes-product-sync'); ?></em></p>
 </div>
 
 <style>
