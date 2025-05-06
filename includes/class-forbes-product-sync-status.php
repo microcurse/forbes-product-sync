@@ -1,6 +1,6 @@
 <?php
 /**
- * Sync Status Class
+ * Sync status handler
  *
  * @package Forbes_Product_Sync
  */
@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Sync Status Class
+ * Class Forbes_Product_Sync_Status
  */
 class Forbes_Product_Sync_Status {
     /**
@@ -23,7 +23,7 @@ class Forbes_Product_Sync_Status {
     /**
      * Constructor
      *
-     * @param array $settings Plugin settings.
+     * @param array $settings Plugin settings
      */
     public function __construct($settings) {
         $this->settings = $settings;
@@ -35,70 +35,58 @@ class Forbes_Product_Sync_Status {
      * @return int
      */
     public function get_synced_count() {
-        $args = array(
-            'post_type' => 'product',
-            'post_status' => 'publish',
-            'meta_query' => array(
-                array(
-                    'key' => '_forbes_sync_status',
-                    'value' => 'synced',
-                    'compare' => '='
-                )
-            ),
-            'fields' => 'ids',
-            'posts_per_page' => -1
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'forbes_product_sync_logs';
+        $count = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(DISTINCT sku) FROM {$table_name} WHERE status = %s AND action = %s",
+                'success',
+                'sync'
+            )
         );
 
-        $query = new WP_Query($args);
-        return $query->found_posts;
+        return (int) $count;
     }
 
     /**
-     * Get count of pending sync products
+     * Get count of pending products
      *
      * @return int
      */
     public function get_pending_count() {
-        $args = array(
-            'post_type' => 'product',
-            'post_status' => 'publish',
-            'meta_query' => array(
-                array(
-                    'key' => '_forbes_sync_status',
-                    'value' => 'pending',
-                    'compare' => '='
-                )
-            ),
-            'fields' => 'ids',
-            'posts_per_page' => -1
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'forbes_product_sync_logs';
+        $count = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(DISTINCT sku) FROM {$table_name} WHERE status = %s AND action = %s",
+                'pending',
+                'sync'
+            )
         );
 
-        $query = new WP_Query($args);
-        return $query->found_posts;
+        return (int) $count;
     }
 
     /**
-     * Get count of failed sync products
+     * Get count of failed syncs
      *
      * @return int
      */
     public function get_failed_count() {
-        $args = array(
-            'post_type' => 'product',
-            'post_status' => 'publish',
-            'meta_query' => array(
-                array(
-                    'key' => '_forbes_sync_status',
-                    'value' => 'failed',
-                    'compare' => '='
-                )
-            ),
-            'fields' => 'ids',
-            'posts_per_page' => -1
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'forbes_product_sync_logs';
+        $count = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(DISTINCT sku) FROM {$table_name} WHERE status = %s AND action = %s",
+                'error',
+                'sync'
+            )
         );
 
-        $query = new WP_Query($args);
-        return $query->found_posts;
+        return (int) $count;
     }
 
     /**

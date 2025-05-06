@@ -26,4 +26,156 @@
 
 .forbes-product-sync-card .button {
     margin-top: 10px;
+}
+
+/**
+ * Admin styles for Forbes Product Sync
+ */
+
+/* General admin styles */
+.forbes-product-sync-admin {
+    margin-top: 20px;
+}
+
+/* Settings, Actions, and Help sections */
+.forbes-product-sync-settings,
+.forbes-product-sync-actions,
+.forbes-product-sync-help {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+    margin-bottom: 20px;
+    padding: 20px;
+}
+
+.forbes-product-sync-help-content {
+    margin-top: 15px;
+}
+
+.forbes-product-sync-help-content h3 {
+    margin-top: 20px;
+}
+
+.forbes-product-sync-help-content ol {
+    margin-left: 20px;
+}
+
+.forbes-product-sync-help-content li {
+    margin-bottom: 10px;
+}
+
+/* Sync status indicators */
+.forbes-sync-status {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.forbes-sync-status.synced {
+    background: #dff0d8;
+    color: #3c763d;
+}
+
+.forbes-sync-status.error {
+    background: #f2dede;
+    color: #a94442;
+}
+
+.forbes-sync-status.not-synced {
+    background: #fcf8e3;
+    color: #8a6d3b;
+}
+
+.forbes-sync-status.missing-sku {
+    background: #f5f5f5;
+    color: #777;
+}
+
+/* Sync status page */
+.forbes-product-sync-status {
+    margin-top: 20px;
+}
+
+.forbes-product-sync-filters {
+    margin-bottom: 20px;
+    padding: 15px;
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+}
+
+.forbes-product-sync-filter {
+    display: inline-block;
+    margin-right: 15px;
+    margin-bottom: 10px;
+}
+
+.forbes-product-sync-filter label {
+    margin-right: 5px;
+}
+
+/* Responsive styles */
+@media screen and (max-width: 782px) {
+    .forbes-product-sync-filter {
+        display: block;
+        margin-bottom: 15px;
+    }
+
+    .forbes-product-sync-filter select {
+        width: 100%;
+        max-width: 300px;
+    }
+}
+
+/* Sync Preview */
+.sync-preview {
+    margin: 20px 0;
+}
+
+.sync-summary {
+    background: #fff;
+    padding: 15px;
+    margin-bottom: 20px;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+}
+
+.sync-action {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.sync-action.new {
+    background: #e1f3d8;
+    color: #1e8cbe;
+}
+
+.sync-action.update {
+    background: #fff8e5;
+    color: #d98500;
+}
+
+.price-diff,
+.stock-diff {
+    color: #d98500;
+    font-size: 0.9em;
+    margin-left: 5px;
+}
+
+.sync-actions {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #ccd0d4;
+}
+
+.sync-actions .submit {
+    display: flex;
+    gap: 10px;
+    align-items: center;
 } 
