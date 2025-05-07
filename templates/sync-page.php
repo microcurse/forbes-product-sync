@@ -174,17 +174,15 @@ if (isset($_POST['start_sync']) && check_admin_referer('forbes_product_sync_star
             <thead>
                 <tr>
                     <th>Total Products</th>
-                    <th>Synced</th>
-                    <th>Pending</th>
-                    <th>Failed</th>
+                    <th>Synced in Last 24 Hours</th>
+                    <th>Products Needing Sync</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
                     <td><?php echo esc_html($stats['total']); ?></td>
-                    <td><?php echo esc_html($stats['synced']); ?></td>
-                    <td><?php echo esc_html($stats['pending']); ?></td>
-                    <td><?php echo esc_html($stats['failed']); ?></td>
+                    <td><?php echo esc_html($stats['last_synced']); ?></td>
+                    <td><?php echo esc_html($stats['needs_sync']); ?></td>
                 </tr>
             </tbody>
         </table>
@@ -201,7 +199,7 @@ if (isset($_POST['start_sync']) && check_admin_referer('forbes_product_sync_star
                     <tr>
                         <th>Date</th>
                         <th>Product</th>
-                        <th>Action</th>
+                        <th>Changes</th>
                         <th>Status</th>
                         <th>Message</th>
                     </tr>
@@ -211,7 +209,7 @@ if (isset($_POST['start_sync']) && check_admin_referer('forbes_product_sync_star
                         <tr>
                             <td><?php echo esc_html($log['date']); ?></td>
                             <td><?php echo esc_html($log['product']); ?></td>
-                            <td><?php echo esc_html($log['action']); ?></td>
+                            <td><?php echo esc_html($log['changes']); ?></td>
                             <td>
                                 <span class="sync-status <?php echo esc_attr($log['status']); ?>">
                                     <?php echo esc_html($log['status']); ?>

@@ -33,6 +33,17 @@ class Forbes_Product_Sync_Product {
     }
 
     /**
+     * Get product by SKU
+     *
+     * @param string $sku
+     * @return WC_Product|false
+     */
+    private function get_product_by_sku($sku) {
+        $product_id = wc_get_product_id_by_sku($sku);
+        return $product_id ? wc_get_product($product_id) : false;
+    }
+
+    /**
      * Create or update a product
      *
      * @param array $product_data Product data from API
@@ -61,6 +72,7 @@ class Forbes_Product_Sync_Product {
      */
     private function create_product($product_data) {
         $product = new WC_Product_Simple();
+        $changes = array('action' => 'created');
         
         // Set basic product data
         $product->set_name($product_data['name']);
@@ -81,28 +93,45 @@ class Forbes_Product_Sync_Product {
         if (!empty($product_data['categories'])) {
             $category_ids = $this->get_or_create_categories($product_data['categories']);
             $product->set_category_ids($category_ids);
+            $changes['categories'] = 'Added ' . count($category_ids) . ' categories';
         }
 
         // Set attributes
         if (!empty($product_data['attributes'])) {
             $attributes = $this->prepare_attributes($product_data['attributes']);
             $product->set_attributes($attributes);
+            $changes['attributes'] = 'Added ' . count($attributes) . ' attributes';
         }
 
         // Save the product
         $product_id = $product->save();
 
         if (is_wp_error($product_id)) {
-            $this->logger->log($product_data['sku'], 'create', 'error', $product_id->get_error_message());
+            $this->logger->log_sync(
+                $product_data['name'],
+                'error',
+                $product_id->get_error_message()
+            );
             return $product_id;
         }
 
         // Handle images
         if (!empty($product_data['images'])) {
             $this->handle_product_images($product_id, $product_data['images']);
+            $changes['images'] = 'Added ' . count($product_data['images']) . ' images';
         }
 
-        $this->logger->log($product_data['sku'], 'create', 'success', 'Product created successfully');
+        // Update last sync time
+        update_post_meta($product_id, '_forbes_last_sync_time', time());
+
+        // Log successful creation
+        $this->logger->log_sync(
+            $product_data['name'],
+            'success',
+            'Product created successfully',
+            $changes
+        );
+
         return $product_id;
     }
 
@@ -115,9 +144,27 @@ class Forbes_Product_Sync_Product {
      */
     private function update_product($product_id, $product_data) {
         $product = wc_get_product($product_id);
+        $changes = array('action' => 'updated');
         
         if (!$product) {
             return new WP_Error('product_not_found', 'Product not found');
+        }
+
+        // Track changes
+        if ($product->get_name() !== $product_data['name']) {
+            $changes['name'] = sprintf('"%s" → "%s"', $product->get_name(), $product_data['name']);
+        }
+        if ($product->get_regular_price() !== $product_data['regular_price']) {
+            $changes['price'] = sprintf('$%s → $%s', $product->get_regular_price(), $product_data['regular_price']);
+        }
+        if ($product->get_sale_price() !== $product_data['sale_price']) {
+            $changes['sale_price'] = sprintf('$%s → $%s', $product->get_sale_price(), $product_data['sale_price']);
+        }
+        if ($product->get_description() !== $product_data['description']) {
+            $changes['description'] = 'Updated';
+        }
+        if ($product->get_short_description() !== $product_data['short_description']) {
+            $changes['short_description'] = 'Updated';
         }
 
         // Update basic product data
@@ -138,28 +185,45 @@ class Forbes_Product_Sync_Product {
         if (!empty($product_data['categories'])) {
             $category_ids = $this->get_or_create_categories($product_data['categories']);
             $product->set_category_ids($category_ids);
+            $changes['categories'] = 'Updated categories';
         }
 
         // Update attributes
         if (!empty($product_data['attributes'])) {
             $attributes = $this->prepare_attributes($product_data['attributes']);
             $product->set_attributes($attributes);
+            $changes['attributes'] = 'Updated attributes';
         }
 
         // Save the product
         $result = $product->save();
 
         if (is_wp_error($result)) {
-            $this->logger->log($product_data['sku'], 'update', 'error', $result->get_error_message());
+            $this->logger->log_sync(
+                $product_data['name'],
+                'error',
+                $result->get_error_message()
+            );
             return $result;
         }
 
         // Handle images
         if (!empty($product_data['images'])) {
             $this->handle_product_images($product_id, $product_data['images']);
+            $changes['images'] = 'Updated images';
         }
 
-        $this->logger->log($product_data['sku'], 'update', 'success', 'Product updated successfully');
+        // Update last sync time
+        update_post_meta($product_id, '_forbes_last_sync_time', time());
+
+        // Log successful update
+        $this->logger->log_sync(
+            $product_data['name'],
+            'success',
+            'Product updated successfully',
+            $changes
+        );
+
         return $product_id;
     }
 

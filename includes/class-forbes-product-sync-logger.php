@@ -79,14 +79,8 @@ class Forbes_Product_Sync_Logger {
      * @return array Log entries
      */
     public function get_recent_logs($limit = 50) {
-        global $wpdb;
-
-        return $wpdb->get_results(
-            $wpdb->prepare(
-                "SELECT * FROM {$this->table_name} ORDER BY created_at DESC LIMIT %d",
-                $limit
-            )
-        );
+        $logs = get_option('forbes_product_sync_logs', array());
+        return array_slice($logs, 0, $limit);
     }
 
     /**
@@ -104,5 +98,40 @@ class Forbes_Product_Sync_Logger {
                 $days
             )
         );
+    }
+
+    /**
+     * Log a sync operation
+     *
+     * @param string $product_name
+     * @param string $status
+     * @param string $message
+     * @param array $changes
+     */
+    public function log_sync($product_name, $status, $message, $changes = array()) {
+        $logs = $this->get_recent_logs();
+        
+        // Format changes for display
+        $changes_text = '';
+        if (!empty($changes)) {
+            $change_parts = array();
+            foreach ($changes as $field => $value) {
+                $change_parts[] = sprintf('%s: %s', $field, $value);
+            }
+            $changes_text = implode(', ', $change_parts);
+        }
+
+        array_unshift($logs, array(
+            'date' => current_time('mysql'),
+            'product' => $product_name,
+            'status' => $status,
+            'message' => $message,
+            'changes' => $changes_text
+        ));
+
+        // Keep only the last 100 logs
+        $logs = array_slice($logs, 0, 100);
+
+        update_option('forbes_product_sync_logs', $logs);
     }
 } 

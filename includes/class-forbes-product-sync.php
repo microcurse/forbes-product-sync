@@ -655,33 +655,32 @@ class Forbes_Product_Sync {
      */
     public function get_sync_stats() {
         $total = wc_get_products(array('limit' => -1, 'return' => 'ids'));
-        $synced = 0;
-        $pending = 0;
-        $failed = 0;
+        $last_synced = 0;
+        $needs_sync = 0;
+        $twenty_four_hours_ago = time() - (24 * 60 * 60);
 
         foreach ($total as $product_id) {
             $product = wc_get_product($product_id);
             if (!$product) continue;
 
-            $sync_status = get_post_meta($product_id, '_forbes_sync_status', true);
-            switch ($sync_status) {
-                case 'synced':
-                    $synced++;
-                    break;
-                case 'pending':
-                    $pending++;
-                    break;
-                case 'failed':
-                    $failed++;
-                    break;
+            $last_sync_time = get_post_meta($product_id, '_forbes_last_sync_time', true);
+            $last_modified = get_post_modified_time('U', true, $product_id);
+
+            // Count products synced in last 24 hours
+            if ($last_sync_time && $last_sync_time > $twenty_four_hours_ago) {
+                $last_synced++;
+            }
+
+            // Count products that need syncing (modified since last sync)
+            if (!$last_sync_time || $last_modified > $last_sync_time) {
+                $needs_sync++;
             }
         }
 
         return array(
             'total' => count($total),
-            'synced' => $synced,
-            'pending' => $pending,
-            'failed' => $failed
+            'last_synced' => $last_synced,
+            'needs_sync' => $needs_sync
         );
     }
 } 
