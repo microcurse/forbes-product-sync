@@ -3,7 +3,7 @@
  * Plugin Name: Forbes Product Sync
  * Plugin URI: https://github.com/microcurse
  * Description: Pulls products from the Live site into the Forbes Portal using WooCommerce REST API
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: Marc Maninang
  * Author URI: https://github.com/microcurse
  * Text Domain: forbes-product-sync
@@ -42,6 +42,9 @@ $required_files = array(
     'includes/class-forbes-product-sync-product.php',
     'includes/class-forbes-product-sync-logger.php',
     'includes/class-forbes-product-sync-status.php',
+    'includes/class-forbes-product-sync-admin.php',
+    'includes/class-forbes-product-sync-queue.php',
+    'includes/class-forbes-product-sync-attributes.php',
     'includes/class-forbes-product-sync.php'
 );
 
@@ -69,6 +72,11 @@ function forbes_product_sync_init() {
     
     // Initialize the main plugin class
     new Forbes_Product_Sync();
+    
+    // Initialize the admin class
+    if (is_admin()) {
+        new Forbes_Product_Sync_Admin();
+    }
 }
 add_action('plugins_loaded', 'forbes_product_sync_init', 20);
 

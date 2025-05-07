@@ -49,6 +49,13 @@ class Forbes_Product_Sync {
     private $logger;
 
     /**
+     * Attributes handler instance
+     *
+     * @var Forbes_Product_Sync_Attributes
+     */
+    private $attributes;
+
+    /**
      * Singleton instance
      *
      * @var Forbes_Product_Sync
@@ -70,6 +77,7 @@ class Forbes_Product_Sync {
         $this->api = new Forbes_Product_Sync_API();
         $this->product = new Forbes_Product_Sync_Product();
         $this->logger = new Forbes_Product_Sync_Logger();
+        $this->attributes = new Forbes_Product_Sync_Attributes();
 
         $this->init_hooks();
     }
@@ -78,20 +86,16 @@ class Forbes_Product_Sync {
      * Initialize hooks
      */
     private function init_hooks() {
-        add_action('admin_menu', array($this, 'add_admin_menu'));
         add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_scripts'));
         add_action('admin_init', array($this, 'register_settings'));
-        
         // Add bulk actions
         add_filter('bulk_actions-edit-product', array($this, 'add_bulk_actions'));
         add_filter('handle_bulk_actions-edit-product', array($this, 'handle_bulk_actions'), 10, 3);
         add_action('admin_notices', array($this, 'bulk_action_admin_notice'));
-        
         // Add column to products list
         add_filter('manage_edit-product_columns', array($this, 'add_sync_column'), 20);
         add_action('manage_product_posts_custom_column', array($this, 'render_sync_column'), 20, 2);
         add_filter('manage_edit-product_sortable_columns', array($this, 'make_sync_column_sortable'));
-
         // Add AJAX handlers
         add_action('wp_ajax_forbes_product_sync_create', array($this, 'handle_create_product'));
         add_action('wp_ajax_forbes_product_sync_update', array($this, 'handle_update_product'));
@@ -205,39 +209,6 @@ class Forbes_Product_Sync {
     }
 
     /**
-     * Add admin menu
-     */
-    public function add_admin_menu() {
-        add_menu_page(
-            __('Product Sync', 'forbes-product-sync'),
-            __('Product Sync', 'forbes-product-sync'),
-            'manage_options',
-            'forbes-product-sync',
-            array($this, 'render_sync_page'),
-            'dashicons-update',
-            56
-        );
-
-        add_submenu_page(
-            'forbes-product-sync',
-            __('Sync Products', 'forbes-product-sync'),
-            __('Sync Products', 'forbes-product-sync'),
-            'manage_options',
-            'forbes-product-sync',
-            array($this, 'render_sync_page')
-        );
-
-        add_submenu_page(
-            'forbes-product-sync',
-            __('Settings', 'forbes-product-sync'),
-            __('Settings', 'forbes-product-sync'),
-            'manage_options',
-            'forbes-product-sync-settings',
-            array($this, 'render_settings_page')
-        );
-    }
-
-    /**
      * Enqueue admin scripts and styles
      */
     public function enqueue_admin_scripts($hook) {
@@ -271,68 +242,6 @@ class Forbes_Product_Sync {
                 'nonce' => wp_create_nonce('forbes_product_sync_nonce')
             )
         );
-    }
-
-    /**
-     * Render settings page
-     */
-    public function render_settings_page() {
-        if (!current_user_can('manage_options')) {
-            return;
-        }
-
-        // Handle test connection
-        if (isset($_POST['test_connection'])) {
-            check_admin_referer('forbes_product_sync_test', 'forbes_test_nonce');
-            $result = $this->test_api_connection();
-            
-            if (is_wp_error($result)) {
-                add_settings_error(
-                    'forbes_product_sync',
-                    'api_test_error',
-                    $result->get_error_message(),
-                    'error'
-                );
-            } else {
-                add_settings_error(
-                    'forbes_product_sync',
-                    'api_test_success',
-                    __('API connection successful!', 'forbes-product-sync'),
-                    'success'
-                );
-            }
-        }
-
-        include FORBES_PRODUCT_SYNC_PLUGIN_DIR . 'templates/settings-page.php';
-    }
-
-    /**
-     * Render sync page
-     */
-    public function render_sync_page() {
-        if (!current_user_can('manage_options')) {
-            return;
-        }
-
-        // Handle sync action
-        if (isset($_POST['forbes_product_sync_action']) && $_POST['forbes_product_sync_action'] === 'sync') {
-            check_admin_referer('forbes_product_sync_action');
-            $this->run_product_sync();
-        }
-
-        // Get sync statistics
-        $sync_status = new Forbes_Product_Sync_Status($this->settings);
-        $synced_count = $sync_status->get_synced_count();
-        $pending_count = $sync_status->get_pending_count();
-        $failed_count = $sync_status->get_failed_count();
-
-        // Get recent logs
-        $logs = $this->logger->get_recent_logs(100);
-
-        // Display any settings errors
-        settings_errors('forbes_product_sync');
-
-        include FORBES_PRODUCT_SYNC_PLUGIN_DIR . 'templates/sync-page.php';
     }
 
     /**
@@ -682,5 +591,17 @@ class Forbes_Product_Sync {
             'last_synced' => $last_synced,
             'needs_sync' => $needs_sync
         );
+    }
+
+    /**
+     * Sync attributes from source to destination
+     *
+     * @param array $source_attributes Source attributes data
+     * @param bool $sync_metadata Whether to sync term metadata
+     * @param bool $handle_conflicts Whether to handle conflicts
+     * @return array|WP_Error Results array on success, WP_Error on failure
+     */
+    public function sync_attributes($source_attributes, $sync_metadata = true, $handle_conflicts = true) {
+        return $this->attributes->sync_attributes($source_attributes);
     }
 } 

@@ -197,7 +197,20 @@ class Forbes_Product_Sync_API {
      * @return array|WP_Error
      */
     public function get_attributes() {
-        return $this->make_request('GET', 'products/attributes', array('per_page' => 100));
+        $cache_key = 'forbes_product_sync_attributes';
+        $cached = get_transient($cache_key);
+        
+        if (false !== $cached) {
+            return $cached;
+        }
+        
+        $result = $this->make_request('GET', 'products/attributes', array('per_page' => 100));
+        
+        if (!is_wp_error($result)) {
+            set_transient($cache_key, $result, HOUR_IN_SECONDS);
+        }
+        
+        return $result;
     }
 
     /**
@@ -207,7 +220,140 @@ class Forbes_Product_Sync_API {
      * @return array|WP_Error
      */
     public function get_attribute_terms($attribute_id) {
-        return $this->make_request('GET', "products/attributes/{$attribute_id}/terms", array('per_page' => 100));
+        $cache_key = 'forbes_product_sync_attribute_terms_' . $attribute_id;
+        $cached = get_transient($cache_key);
+        
+        if (false !== $cached) {
+            return $cached;
+        }
+        
+        $result = $this->make_request('GET', "products/attributes/{$attribute_id}/terms", array('per_page' => 100));
+        
+        if (!is_wp_error($result)) {
+            set_transient($cache_key, $result, HOUR_IN_SECONDS);
+        }
+        
+        return $result;
+    }
+    
+    /**
+     * Get all attributes with their terms in a single method call
+     * This reduces the number of API calls needed
+     *
+     * @return array|WP_Error Associative array with attributes and their terms or WP_Error
+     */
+    public function get_attributes_with_terms() {
+        $cache_key = 'forbes_product_sync_attributes_with_terms';
+        $cached = get_transient($cache_key);
+        
+        if (false !== $cached) {
+            return $cached;
+        }
+        
+        $attributes = $this->get_attributes();
+        
+        if (is_wp_error($attributes)) {
+            return $attributes;
+        }
+        
+        $result = array(
+            'attributes' => $attributes,
+            'terms' => array(),
+            'cache_timestamp' => time()
+        );
+        
+        // Performance improvement: Fetch terms in parallel using WP HTTP API
+        if (!empty($attributes)) {
+            $requests = array();
+            $api_url = untrailingslashit($this->settings['api_url']);
+            if (strpos($api_url, 'wp-json/wc/v3') === false) {
+                $api_url = trailingslashit($api_url) . 'wp-json/wc/v3';
+            }
+            
+            $auth = base64_encode($this->settings['consumer_key'] . ':' . $this->settings['consumer_secret']);
+            
+            // Common request args
+            $request_args = array(
+                'method' => 'GET',
+                'headers' => array(
+                    'Authorization' => 'Basic ' . $auth,
+                    'Content-Type' => 'application/json'
+                ),
+                'timeout' => 30,
+                'sslverify' => false
+            );
+            
+            // Prepare parallel requests
+            foreach ($attributes as $attribute) {
+                $url = trailingslashit($api_url) . "products/attributes/{$attribute['id']}/terms";
+                $url = add_query_arg(array('per_page' => 100), $url);
+                
+                $requests[$attribute['id']] = array(
+                    'url' => $url,
+                    'args' => $request_args
+                );
+            }
+            
+            // Execute requests in parallel
+            $responses = array();
+            
+            // Use sequential requests with reduced timeout for better overall performance
+            foreach ($requests as $attr_id => $request) {
+                // Use a shorter timeout for each request
+                $request['args']['timeout'] = 10;
+                $responses[$attr_id] = wp_remote_request($request['url'], $request['args']);
+            }
+            
+            // Process responses
+            foreach ($responses as $attr_id => $response) {
+                if (is_wp_error($response)) {
+                    error_log('Forbes Product Sync - Error fetching terms for attribute ID ' . $attr_id . ': ' . $response->get_error_message());
+                    $result['terms'][$attr_id] = array();
+                    continue;
+                }
+                
+                $response_code = wp_remote_retrieve_response_code($response);
+                $response_body = wp_remote_retrieve_body($response);
+                
+                if ($response_code !== 200) {
+                    error_log('Forbes Product Sync - API error for attribute ID ' . $attr_id . ': ' . $response_code);
+                    $result['terms'][$attr_id] = array();
+                    continue;
+                }
+                
+                $data = json_decode($response_body, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    error_log('Forbes Product Sync - JSON parse error for attribute ID ' . $attr_id . ': ' . json_last_error_msg());
+                    $result['terms'][$attr_id] = array();
+                    continue;
+                }
+                
+                // Cache individual term results
+                set_transient('forbes_product_sync_attribute_terms_' . $attr_id, $data, HOUR_IN_SECONDS);
+                
+                $result['terms'][$attr_id] = $data;
+            }
+        }
+        
+        set_transient($cache_key, $result, HOUR_IN_SECONDS);
+        
+        return $result;
+    }
+    
+    /**
+     * Clear all attribute and term caches
+     */
+    public function clear_attribute_caches() {
+        delete_transient('forbes_product_sync_attributes');
+        delete_transient('forbes_product_sync_attributes_with_terms');
+        
+        // Clear individual term caches
+        $attributes = $this->get_attributes();
+        if (!is_wp_error($attributes)) {
+            foreach ($attributes as $attribute) {
+                delete_transient('forbes_product_sync_attribute_terms_' . $attribute['id']);
+            }
+        }
     }
 
     /**
@@ -241,6 +387,22 @@ class Forbes_Product_Sync_API {
         
         if ($product_id) {
             return wc_get_product($product_id);
+        }
+        
+        return false;
+    }
+
+    /**
+     * Get cache timestamp for when attributes were last fetched
+     * 
+     * @return int|false Timestamp or false if no cache
+     */
+    public function get_cache_timestamp() {
+        $cache_key = 'forbes_product_sync_attributes_with_terms';
+        $cached = get_transient($cache_key);
+        
+        if (false !== $cached && isset($cached['cache_timestamp'])) {
+            return $cached['cache_timestamp'];
         }
         
         return false;
