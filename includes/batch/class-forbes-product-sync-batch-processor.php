@@ -1,6 +1,6 @@
 <?php
 /**
- * Queue system for attribute synchronization
+ * Batch processing handler
  *
  * @package Forbes_Product_Sync
  */
@@ -9,7 +9,11 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class Forbes_Product_Sync_Queue {
+/**
+ * Class Forbes_Product_Sync_Batch_Processor
+ * Handles batch processing of large amounts of data
+ */
+class Forbes_Product_Sync_Batch_Processor {
     /**
      * Queue option name
      */
@@ -24,39 +28,36 @@ class Forbes_Product_Sync_Queue {
      * Batch size
      */
     const BATCH_SIZE = 50;
-
+    
     /**
      * Logger instance
      *
      * @var Forbes_Product_Sync_Logger
      */
     private $logger;
-
+    
     /**
-     * Attributes handler instance
+     * Attributes handler
      *
-     * @var Forbes_Product_Sync_Attributes
+     * @var Forbes_Product_Sync_Attributes_Handler
      */
-    private $attributes;
-
+    private $attributes_handler;
+    
     /**
      * Constructor
      */
     public function __construct() {
-        $this->logger = new Forbes_Product_Sync_Logger();
-        $this->attributes = new Forbes_Product_Sync_Attributes();
+        $this->logger = Forbes_Product_Sync_Logger::instance();
+        $this->attributes_handler = new Forbes_Product_Sync_Attributes_Handler();
     }
-
+    
     /**
-     * Initialize queue
+     * Initialize queue for attribute synchronization
      *
-     * @param array $source_attributes
-     * @param bool $dry_run
-     * @return bool
+     * @param array $source_attributes Source attributes to process
+     * @return bool Success
      */
-    public function initialize_queue($source_attributes, $dry_run = false) {
-        $this->attributes->set_dry_run($dry_run);
-
+    public function initialize_attributes_queue($source_attributes) {
         // Clear existing queue
         delete_option(self::QUEUE_OPTION);
         delete_option(self::QUEUE_STATUS_OPTION);
@@ -67,6 +68,7 @@ class Forbes_Product_Sync_Queue {
             'total' => count($source_attributes),
             'processed' => 0,
             'current_batch' => 0,
+            'type' => 'attributes',
             'results' => array(
                 'created' => 0,
                 'updated' => 0,
@@ -78,17 +80,59 @@ class Forbes_Product_Sync_Queue {
         update_option(self::QUEUE_OPTION, $queue);
         update_option(self::QUEUE_STATUS_OPTION, array(
             'status' => 'initialized',
-            'message' => 'Queue initialized',
+            'message' => sprintf(
+                __('Queue initialized with %d attributes', 'forbes-product-sync'),
+                count($source_attributes)
+            ),
             'last_updated' => current_time('mysql')
         ));
 
         return true;
     }
+    
+    /**
+     * Initialize queue for product synchronization
+     *
+     * @param array $source_products Source products to process
+     * @return bool Success
+     */
+    public function initialize_products_queue($source_products) {
+        // Clear existing queue
+        delete_option(self::QUEUE_OPTION);
+        delete_option(self::QUEUE_STATUS_OPTION);
 
+        // Initialize queue
+        $queue = array(
+            'items' => $source_products,
+            'total' => count($source_products),
+            'processed' => 0,
+            'current_batch' => 0,
+            'type' => 'products',
+            'results' => array(
+                'created' => 0,
+                'updated' => 0,
+                'skipped' => 0,
+                'errors' => 0
+            )
+        );
+
+        update_option(self::QUEUE_OPTION, $queue);
+        update_option(self::QUEUE_STATUS_OPTION, array(
+            'status' => 'initialized',
+            'message' => sprintf(
+                __('Queue initialized with %d products', 'forbes-product-sync'),
+                count($source_products)
+            ),
+            'last_updated' => current_time('mysql')
+        ));
+
+        return true;
+    }
+    
     /**
      * Process next batch
      *
-     * @return array|false
+     * @return array|false Batch processing results or false if queue is complete
      */
     public function process_next_batch() {
         $queue = get_option(self::QUEUE_OPTION);
@@ -105,7 +149,17 @@ class Forbes_Product_Sync_Queue {
         }
 
         // Process batch
-        $results = $this->attributes->sync_attributes($batch);
+        if ($queue['type'] === 'attributes') {
+            $results = $this->attributes_handler->sync_attributes($batch);
+        } else {
+            // For future implementation
+            $results = array(
+                'created' => 0,
+                'updated' => 0,
+                'skipped' => 0,
+                'errors' => 0
+            );
+        }
 
         // Update queue
         $queue['processed'] += count($batch);
@@ -119,7 +173,7 @@ class Forbes_Product_Sync_Queue {
         update_option(self::QUEUE_STATUS_OPTION, array(
             'status' => 'processing',
             'message' => sprintf(
-                'Processed %d of %d items',
+                __('Processed %d of %d items', 'forbes-product-sync'),
                 $queue['processed'],
                 $queue['total']
             ),
@@ -133,9 +187,11 @@ class Forbes_Product_Sync_Queue {
             'results' => $results
         );
     }
-
+    
     /**
-     * Complete queue
+     * Complete queue processing
+     *
+     * @return void
      */
     private function complete_queue() {
         $queue = get_option(self::QUEUE_OPTION);
@@ -147,7 +203,7 @@ class Forbes_Product_Sync_Queue {
             'Queue Complete',
             'success',
             sprintf(
-                'Completed processing %d items. Created: %d, Updated: %d, Skipped: %d, Errors: %d',
+                __('Completed processing %d items. Created: %d, Updated: %d, Skipped: %d, Errors: %d', 'forbes-product-sync'),
                 $queue['total'],
                 $queue['results']['created'],
                 $queue['results']['updated'],
@@ -158,59 +214,86 @@ class Forbes_Product_Sync_Queue {
 
         update_option(self::QUEUE_STATUS_OPTION, array(
             'status' => 'completed',
-            'message' => 'Queue processing completed',
+            'message' => __('Queue processing completed', 'forbes-product-sync'),
             'last_updated' => current_time('mysql'),
             'results' => $queue['results']
         ));
 
         delete_option(self::QUEUE_OPTION);
     }
-
+    
     /**
      * Get queue status
      *
-     * @return array|false
+     * @return array|false Queue status or false if no queue exists
      */
     public function get_status() {
         return get_option(self::QUEUE_STATUS_OPTION);
     }
-
+    
     /**
      * Check if queue is processing
      *
-     * @return bool
+     * @return bool Processing status
      */
     public function is_processing() {
         $status = $this->get_status();
         return $status && $status['status'] === 'processing';
     }
-
+    
     /**
      * Check if queue is completed
      *
-     * @return bool
+     * @return bool Completion status
      */
     public function is_completed() {
         $status = $this->get_status();
         return $status && $status['status'] === 'completed';
     }
-
+    
     /**
      * Get queue progress
      *
-     * @return array|false
+     * @return array Progress information
      */
     public function get_progress() {
         $queue = get_option(self::QUEUE_OPTION);
-        if (!$queue) {
-            return false;
+        $status = $this->get_status();
+        
+        if (!$queue || !$status) {
+            return array(
+                'total' => 0,
+                'processed' => 0,
+                'percent' => 0,
+                'status' => 'idle',
+                'message' => __('No active queue', 'forbes-product-sync'),
+                'results' => array()
+            );
         }
-
+        
         return array(
-            'processed' => $queue['processed'],
             'total' => $queue['total'],
-            'percentage' => ($queue['total'] > 0) ? round(($queue['processed'] / $queue['total']) * 100) : 0,
+            'processed' => $queue['processed'],
+            'percent' => $queue['total'] > 0 ? floor(($queue['processed'] / $queue['total']) * 100) : 0,
+            'status' => $status['status'],
+            'message' => $status['message'],
             'results' => $queue['results']
         );
+    }
+    
+    /**
+     * Cancel current queue
+     *
+     * @return bool Success
+     */
+    public function cancel_queue() {
+        delete_option(self::QUEUE_OPTION);
+        update_option(self::QUEUE_STATUS_OPTION, array(
+            'status' => 'cancelled',
+            'message' => __('Queue processing cancelled', 'forbes-product-sync'),
+            'last_updated' => current_time('mysql')
+        ));
+        
+        return true;
     }
 } 
