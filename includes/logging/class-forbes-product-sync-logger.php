@@ -146,11 +146,24 @@ class Forbes_Product_Sync_Logger {
     /**
      * Get recent logs
      *
+     * @param string $type Optional log type filter (e.g., 'attribute', 'product')
      * @param int $limit Number of logs to return
      * @return array Log entries
      */
-    public function get_recent_logs($limit = 50) {
+    public function get_recent_logs($type = '', $limit = 50) {
         $logs = get_option('forbes_product_sync_logs', array());
+        
+        // Filter by type if specified
+        if (!empty($type)) {
+            $filtered_logs = array();
+            foreach ($logs as $log) {
+                if (isset($log['type']) && $log['type'] === $type) {
+                    $filtered_logs[] = $log;
+                }
+            }
+            $logs = $filtered_logs;
+        }
+        
         return array_slice($logs, 0, $limit);
     }
 
@@ -178,8 +191,9 @@ class Forbes_Product_Sync_Logger {
      * @param string $status Status (success, error, warning, info)
      * @param string $message Message
      * @param array $changes Array of changes for detailed logging
+     * @param string $type Type of log entry (e.g., 'attribute', 'product')
      */
-    public function log_sync($product_name, $status, $message, $changes = array()) {
+    public function log_sync($product_name, $status, $message, $changes = array(), $type = '') {
         $logs = $this->get_recent_logs();
         
         // Format changes for display
@@ -197,7 +211,8 @@ class Forbes_Product_Sync_Logger {
             'product' => $product_name,
             'status' => $status,
             'message' => $message,
-            'changes' => $changes_text
+            'changes' => $changes_text,
+            'type' => $type
         ));
 
         // Keep only the last X logs

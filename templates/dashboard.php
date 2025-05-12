@@ -12,8 +12,29 @@ if (!defined('ABSPATH')) {
 
 // Get logger stats
 $logger = Forbes_Product_Sync_Logger::instance();
-$stats = $logger->get_sync_stats();
-$recent_logs = $logger->get_recent_logs(10);
+
+// Check if log table exists
+global $wpdb;
+$table_name = FORBES_PRODUCT_SYNC_LOG_TABLE;
+$table_exists = $wpdb->get_var("SHOW TABLES LIKE '{$table_name}'") === $table_name;
+
+// Get stats only if table exists
+if ($table_exists) {
+    $stats = $logger->get_sync_stats();
+    $recent_logs = $logger->get_recent_logs(10);
+} else {
+    // Default values if table doesn't exist
+    $stats = array(
+        'success' => 0,
+        'error' => 0,
+        'created' => 0,
+        'updated' => 0
+    );
+    $recent_logs = array();
+}
+
+// Get batch processor
+require_once FORBES_PRODUCT_SYNC_PLUGIN_DIR . 'includes/batch/class-forbes-product-sync-batch-processor.php';
 
 // Get batch processor status
 $batch_processor = new Forbes_Product_Sync_Batch_Processor();
@@ -23,6 +44,13 @@ $is_processing = $batch_processor->is_processing();
 
 <div class="wrap forbes-product-sync-main">
     <h1><?php esc_html_e('Forbes Product Sync Dashboard', 'forbes-product-sync'); ?></h1>
+    
+    <?php if (!$table_exists): ?>
+    <div class="notice notice-error">
+        <p><?php esc_html_e('Database tables are missing. Please repair the database to continue.', 'forbes-product-sync'); ?></p>
+        <p><button id="repair-database" class="button button-primary"><?php esc_html_e('Repair Database Tables', 'forbes-product-sync'); ?></button></p>
+    </div>
+    <?php endif; ?>
     
     <div class="dashboard-grid">
         <div class="card">
@@ -52,7 +80,7 @@ $is_processing = $batch_processor->is_processing();
                 </div>
             </div>
             
-            <?php if ($is_processing): ?>
+            <?php if ($is_processing && $table_exists): ?>
             <div class="sync-progress-container">
                 <h3><?php esc_html_e('Current Sync Progress', 'forbes-product-sync'); ?></h3>
                 <?php 
@@ -97,7 +125,9 @@ $is_processing = $batch_processor->is_processing();
         <div class="card">
             <h2><?php esc_html_e('Recent Sync Logs', 'forbes-product-sync'); ?></h2>
             
-            <?php if (empty($recent_logs)): ?>
+            <?php if (!$table_exists): ?>
+            <p><?php esc_html_e('Log table not available. Please repair the database.', 'forbes-product-sync'); ?></p>
+            <?php elseif (empty($recent_logs)): ?>
             <p><?php esc_html_e('No recent logs found.', 'forbes-product-sync'); ?></p>
             <?php else: ?>
             <table class="wp-list-table widefat fixed striped">
@@ -133,4 +163,34 @@ $is_processing = $batch_processor->is_processing();
             <?php endif; ?>
         </div>
     </div>
-</div> 
+</div>
+
+<script>
+jQuery(document).ready(function($) {
+    // Repair database button
+    $('#repair-database').on('click', function() {
+        $(this).prop('disabled', true).text('<?php esc_html_e('Repairing...', 'forbes-product-sync'); ?>');
+        
+        $.ajax({
+            url: ajaxurl,
+            type: 'POST',
+            data: {
+                action: 'forbes_product_sync_repair_db',
+                nonce: '<?php echo wp_create_nonce('forbes_product_sync_repair_db'); ?>'
+            },
+            success: function(response) {
+                if (response.success) {
+                    location.reload();
+                } else {
+                    alert('<?php esc_html_e('Database repair failed. Please contact support.', 'forbes-product-sync'); ?>');
+                    $('#repair-database').prop('disabled', false).text('<?php esc_html_e('Repair Database Tables', 'forbes-product-sync'); ?>');
+                }
+            },
+            error: function() {
+                alert('<?php esc_html_e('Database repair failed. Please contact support.', 'forbes-product-sync'); ?>');
+                $('#repair-database').prop('disabled', false).text('<?php esc_html_e('Repair Database Tables', 'forbes-product-sync'); ?>');
+            }
+        });
+    });
+});
+</script> 

@@ -3,7 +3,7 @@
  * Plugin Name: Forbes Product Sync
  * Plugin URI: https://github.com/microcurse
  * Description: Pulls products from the Live site into the Forbes Portal using WooCommerce REST API
- * Version: 1.1.0
+ * Version: 1.1.2
  * Author: Marc Maninang
  * Author URI: https://github.com/microcurse
  * Text Domain: forbes-product-sync
@@ -32,14 +32,45 @@ if (!in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get
 }
 
 // Define plugin constants
-define('FORBES_PRODUCT_SYNC_VERSION', '1.1.0');
+define('FORBES_PRODUCT_SYNC_VERSION', '1.1.2');
 define('FORBES_PRODUCT_SYNC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('FORBES_PRODUCT_SYNC_PLUGIN_URL', plugin_dir_url(__FILE__));
+define('FORBES_PRODUCT_SYNC_DEBUG', true);
 
 // Define database table name constant globally for activation hook compatibility
 global $wpdb;
 if (!defined('FORBES_PRODUCT_SYNC_LOG_TABLE')) {
     define('FORBES_PRODUCT_SYNC_LOG_TABLE', $wpdb->prefix . 'forbes_product_sync_log');
+}
+
+/**
+ * Ensure data is in array format
+ * 
+ * @param mixed $data Data to convert
+ * @return array Data in array format
+ */
+function fps_ensure_array($data) {
+    if (is_array($data)) {
+        return $data;
+    }
+    
+    if (is_object($data)) {
+        return json_decode(json_encode($data), true);
+    }
+    
+    return [];
+}
+
+/**
+ * Log debug message
+ * 
+ * @param string $message Message to log
+ * @param string $type Log type (Info, Error, etc.)
+ */
+function fps_debug($message, $type = 'Info') {
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('[' . date('d-M-Y H:i:s') . ' UTC] Forbes Product Sync - ' . $type . ': ' . $message);
+    }
 }
 
 /**
@@ -93,6 +124,16 @@ final class Forbes_Product_Sync_Plugin {
         // Manually load Logger class as it's needed early by other classes
         require_once FORBES_PRODUCT_SYNC_PLUGIN_DIR . 'includes/logging/class-forbes-product-sync-logger.php';
         
+        // Load API classes early
+        require_once FORBES_PRODUCT_SYNC_PLUGIN_DIR . 'includes/api/class-forbes-product-sync-api-client.php';
+        require_once FORBES_PRODUCT_SYNC_PLUGIN_DIR . 'includes/api/class-forbes-product-sync-api-attributes.php';
+        
+        // Attribute handlers
+        require_once FORBES_PRODUCT_SYNC_PLUGIN_DIR . 'includes/attributes/class-forbes-product-sync-attributes-handler.php';
+        
+        // Batch processor class
+        require_once FORBES_PRODUCT_SYNC_PLUGIN_DIR . 'includes/batch/class-forbes-product-sync-batch-processor.php';
+        
         // Load core functionality class definition (constructor runs later during plugins_loaded)
         require_once FORBES_PRODUCT_SYNC_PLUGIN_DIR . 'includes/class-forbes-product-sync.php';
         
@@ -138,7 +179,7 @@ final class Forbes_Product_Sync_Plugin {
     /**
      * Create database tables
      */
-    private function create_tables() {
+    public function create_tables() {
         global $wpdb;
         $charset_collate = $wpdb->get_charset_collate();
 
@@ -189,12 +230,30 @@ final class Forbes_Product_Sync_Plugin {
         // Load text domain for internationalization
         load_plugin_textdomain('forbes-product-sync', false, dirname(plugin_basename(__FILE__)) . '/languages');
         
+        // Check if tables exist, create if not
+        $this->check_tables();
+        
         // Initialize the main plugin class
         new Forbes_Product_Sync();
         
         // Initialize the admin class if in admin
         if (is_admin()) {
             new Forbes_Product_Sync_Admin();
+        }
+    }
+    
+    /**
+     * Check if required tables exist and create them if not
+     */
+    private function check_tables() {
+        global $wpdb;
+        
+        $table_name = FORBES_PRODUCT_SYNC_LOG_TABLE;
+        $table_exists = $wpdb->get_var("SHOW TABLES LIKE '{$table_name}'") === $table_name;
+        
+        if (!$table_exists) {
+            $this->create_tables();
+            fps_debug('Created database tables on init because they were missing.');
         }
     }
 }

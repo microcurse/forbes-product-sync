@@ -58,6 +58,8 @@ class Forbes_Product_Sync_Autoloader {
             $path .= 'logging/';
         } else if (false !== strpos($class, 'Queue')) {
             $path .= 'batch/';
+        } else if (false !== strpos($class, 'Batch')) {
+            $path .= 'batch/';
         }
         
         // Full path to file
