@@ -2,6 +2,22 @@
  * Forbes Product Sync Admin Styles
  */
 
+/* General Helper Styles */
+.fps-text-success {
+    color: #28a745; /* Green */
+}
+.fps-text-error {
+    color: #dc3545; /* Red */
+}
+.fps-text-warning,
+.fps-text-partial-success {
+    color: #fd7e14; /* Orange */
+}
+.fps-text-info {
+    color: #17a2b8; /* Teal */
+}
+
+/* Test Connection Area */
 .fps-test-connection-container {
     margin-top: 20px;
     display: flex;
@@ -12,48 +28,185 @@
     margin-left: 10px;
     padding: 5px 10px;
     display: inline-block;
+    font-weight: bold;
+}
+.fps-test-result.success { /* Already styled by .fps-text-success if used, but can be specific */
+    color: #28a745;
+}
+.fps-test-result.error { /* Already styled by .fps-text-error if used */
+    color: #dc3545;
 }
 
-.fps-test-result.success {
-    color: #46b450;
-    font-weight: 500;
-}
-
-.fps-test-result.error {
-    color: #dc3232;
-    font-weight: 500;
-}
-
+/* General Notices (if custom styling needed beyond WP core) */
 .fps-notice {
     margin: 20px 0;
     padding: 10px 15px;
     background: #fff;
     border-radius: 3px;
-    border-left: 4px solid #00a0d2;
+    border-left: 4px solid #00a0d2; /* Default WP blue for info */
 }
+.fps-notice.notice-warning {
+    border-left-color: #ffb900;
+}
+.fps-notice.notice-error {
+    border-left-color: #dc3232;
+}
+.fps_notice.notice-success {
+    border-left-color: #46b450;
+}
+
 
 /* Settings page styles */
 .fps-settings-container table {
     margin-bottom: 20px;
 }
-
-/* Add a bit more space around form elements */
-.form-table th {
-    padding-top: 20px;
-    padding-bottom: 20px;
+.fps-settings-container .form-table th,
+.fps-settings-container .form-table td {
+    padding-top: 15px; /* Adjusted from 20px for slightly less padding */
+    padding-bottom: 15px;
 }
 
+/* Spinner */
 .fps-spinner {
     display: inline-block;
     visibility: hidden;
-    vertical-align: middle;
+    vertical-align: middle; /* Ensures it aligns well with text/buttons */
     width: 20px;
     height: 20px;
-    margin-left: 5px;
+    margin: 0 5px; /* Added some margin for better spacing */
     background: url(../../../wp-admin/images/spinner.gif) no-repeat;
     background-size: 20px 20px;
 }
-
 .fps-spinner.is-active {
     visibility: visible;
+}
+
+/* AJAX Status Messages (next to Sync buttons) */
+span.fps-sync-status {
+    margin-left: 8px;
+    font-weight: bold;
+}
+span.fps-sync-status.success {
+    color: #28a745; /* Green */
+}
+span.fps-sync-status.error {
+    color: #dc3545; /* Red */
+}
+span.fps-sync-status.partial-success { /* For product sync with minor issues */
+    color: #fd7e14; /* Orange */
+}
+
+/* Log Page Status Badges */
+.fps-log-status {
+    display: inline-block;
+    padding: 4px 8px;
+    font-size: 0.85em;
+    font-weight: bold;
+    line-height: 1.2;
+    color: #fff;
+    text-align: center;
+    white-space: nowrap;
+    vertical-align: baseline;
+    border-radius: .25rem;
+    text-transform: uppercase;
+}
+.fps-log-status-success {
+    background-color: #28a745; /* Green */
+}
+.fps-log-status-error {
+    background-color: #dc3545; /* Red */
+}
+.fps-log-status-skipped {
+    background-color: #ffc107; /* Yellow */
+    color: #212529; /* Dark text for yellow background */
+}
+.fps-log-status-info {
+    background-color: #17a2b8; /* Teal */
+}
+.fps-log-status-partial_success { /* Note: underscore from PHP, CSS uses hyphen */
+    background-color: #fd7e14; /* Orange */
+}
+/* Ensure CSS class matches if PHP uses partial_success */
+.fps-log-status-partial-success { 
+    background-color: #fd7e14; /* Orange */
+}
+
+
+/* General Table Polish for Plugin Pages */
+.wrap.fps-attribute-sync-page .wp-list-table th,
+.wrap.fps-attribute-sync-page .wp-list-table td,
+.wrap.fps-product-sync-page .wp-list-table th,
+.wrap.fps-product-sync-page .wp-list-table td,
+.wrap.fps-sync-logs-page .wp-list-table th,
+.wrap.fps-sync-logs-page .wp-list-table td {
+    vertical-align: middle;
+}
+
+/* Spacing for buttons within table cells if needed in future */
+.wp-list-table td .button + .button {
+    margin-left: 5px;
+}
+
+/* Ensure consistent font and spacing for descriptions under input fields */
+.form-table p.description {
+    font-size: 13px;
+    color: #555d66;
+}
+
+/* Styling for the container of settings page */
+.fps-settings-container {
+    max-width: 800px;
+}
+
+/* Add some visual separation for sections on settings page if not using do_settings_sections */
+.fps-settings-container h2 {
+    margin-top: 30px;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #ccd0d4;
+}
+.fps-settings-container h2:first-of-type {
+    margin-top: 0;
+}
+
+/* Ensure sync buttons have a consistent look if not already primary */
+.fps-sync-attribute-button,
+.fps-sync-product-button {
+    /* If they are already .button-primary, this is not strictly needed unless overriding */
+}
+
+/* For messages displayed directly in admin pages (not AJAX status spans) */
+.fps-page-notice {
+    margin-bottom: 15px;
+}
+.fps-page-notice.error {
+    color: #dc3545;
+    border-left: 4px solid #dc3545;
+    padding: 10px;
+    background-color: #fff;
+    box-shadow: 0 1px 1px 0 rgba(0,0,0,.1);
+}
+.fps-page-notice.success {
+    color: #28a745;
+    border-left: 4px solid #28a745;
+    padding: 10px;
+    background-color: #fff;
+    box-shadow: 0 1px 1px 0 rgba(0,0,0,.1);
+}
+.fps-page-notice.warning {
+    color: #5f4d02; /* Darker text for yellow */
+    border-left: 4px solid #ffb900;
+    padding: 10px;
+    background-color: #fff;
+    box-shadow: 0 1px 1px 0 rgba(0,0,0,.1);
+}
+
+/* Ensure admin page titles are standard */
+.wrap h1 {
+    /* WordPress core usually handles this well */
+}
+
+/* Ensure consistent spacing for the clear logs button */
+#clear_logs_button {
+    margin-bottom: 15px; /* Add some space below the button before the table */
 }

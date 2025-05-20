@@ -23,7 +23,7 @@ class FPS_Admin_Settings {
      */
     public static function init() {
         // Register settings
-        add_action( 'admin_init', array( __CLASS__, 'register_settings' ) );
+        self::register_settings();
     }
     
     /**
@@ -155,7 +155,7 @@ class FPS_Admin_Settings {
      * Output the settings page.
      */
     public static function output() {
-        self::init();
+        // self::init(); // Removed this call as settings are registered on admin_init
         ?>
         <div class="wrap fps-settings-container">
             <h1><?php echo esc_html( get_admin_page_title() ); ?></h1>

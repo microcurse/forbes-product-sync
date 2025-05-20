@@ -35,6 +35,7 @@ if ( is_admin() ) {
     include_once dirname( __FILE__ ) . '/includes/admin/class-fps-admin-attribute-sync.php';
     include_once dirname( __FILE__ ) . '/includes/admin/class-fps-admin-sync-logs.php';
     include_once dirname( __FILE__ ) . '/includes/class-fps-ajax.php';
+    include_once dirname( __FILE__ ) . '/includes/class-fps-logger.php'; // Added Logger
     
     // Initialize admin classes directly
     add_action( 'plugins_loaded', function() {
@@ -55,3 +56,6 @@ function FPS() {
 
 // Global for backwards compatibility
 $GLOBALS['forbes_product_sync'] = FPS();
+
+// Activation hook for creating tables
+register_activation_hook( __FILE__, array( 'FPS_Logger', 'create_table' ) );
