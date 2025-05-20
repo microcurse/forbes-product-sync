@@ -48,8 +48,8 @@ class FPS_AJAX {
             wp_send_json_error( array( 'message' => __( 'Please save your API settings first.', 'forbes-product-sync' ) ) );
         }
 
-        // Changed to WooCommerce specific endpoint
-        $test_endpoint = trailingslashit( $remote_url ) . 'wp-json/wc/v3/data'; 
+        // Changed to a more general WooCommerce products endpoint for testing
+        $test_endpoint = trailingslashit( $remote_url ) . 'wp-json/wc/v3/products?per_page=1'; 
         
         $response = wp_remote_get(
             $test_endpoint,
@@ -87,13 +87,19 @@ class FPS_AJAX {
 
         $data = json_decode( $body );
         
-        // Check for a key specific to the /wc/v3/data endpoint, e.g., 'currency'
-        if ( empty( $data ) || ! is_object( $data ) || ! isset( $data->currency ) ) {
-            wp_send_json_error( array( 'message' => __( 'Invalid WooCommerce API response format.', 'forbes-product-sync' ) ) );
+        // Check if the response is an array (products endpoint returns an array)
+        if ( empty( $data ) || ! is_array( $data ) ) {
+            // Check if the body itself was the permission error from WC
+            if (is_object($data) && isset($data->code) && strpos($data->code, 'rest_cannot_view') !== false) {
+                 $error_message = isset($data->message) ? $data->message : 'Permission denied for test endpoint.';
+                 wp_send_json_error( array( 'message' => sprintf(__( 'Connection Test Failed: %s Please ensure the API user has permissions for /wc/v3/products.', 'forbes-product-sync'), $error_message) ) );
+            } else {
+                wp_send_json_error( array( 'message' => __( 'Invalid WooCommerce API response format from products endpoint.', 'forbes-product-sync' ) . ' (Raw: ' . esc_html(substr($body, 0, 200)) . ')' ) );
+            }
             return;
         }
 
-        wp_send_json_success( array( 'message' => __( 'Connection successful! The remote site\'s WooCommerce API is accessible.', 'forbes-product-sync' ) ) );
+        wp_send_json_success( array( 'message' => __( 'Connection successful! The remote site\'s WooCommerce API (products endpoint) is accessible.', 'forbes-product-sync' ) ) );
     }
 
     /**
