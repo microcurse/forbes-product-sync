@@ -139,11 +139,29 @@ class FPS_Admin {
             'fps-admin-scripts',
             'fps_params',
             array(
-                'ajax_url'   => admin_url( 'admin-ajax.php' ),
-                'nonce'      => wp_create_nonce( 'fps-admin-nonce' ),
-                'test_connection_prompt' => __( 'Testing connection...', 'forbes-product-sync' ),
-                'test_success' => __( 'Connection successful!', 'forbes-product-sync' ),
-                'test_error'   => __( 'Connection failed: ', 'forbes-product-sync' ),
+                'ajax_url'                 => admin_url( 'admin-ajax.php' ),
+                'nonce'                    => wp_create_nonce( 'fps-admin-nonce' ),
+                // General
+                'sync_text'                => __( 'Sync', 'forbes-product-sync' ),
+                'syncing_text'             => __( 'Syncing...', 'forbes-product-sync' ),
+                'unknown_error'            => __( 'Unknown error.', 'forbes-product-sync' ),
+                'sync_error_prefix'        => __( 'Error: ', 'forbes-product-sync' ), // Generic error prefix
+                'sync_success_generic'     => __( ' synced successfully.', 'forbes-product-sync' ), // e.g., "[Item Name] synced successfully."
+                'see_console_for_details'  => __( 'See browser console for more details.', 'forbes-product-sync' ),
+                
+                // Test Connection
+                'testing_connection_text'  => __( 'Testing connection...', 'forbes-product-sync' ),
+                'test_success_message'     => __( 'Connection successful! The remote site is accessible.', 'forbes-product-sync' ), // Already in AJAX, but good for JS if needed
+                'test_error_prefix'        => __( 'Connection failed: ', 'forbes-product-sync' ), // Specific for test connection errors
+
+                // Product Sync
+                'default_product_name'     => __( 'Product', 'forbes-product-sync' ),
+                'syncing_product_text'     => __( 'Syncing "%s"...', 'forbes-product-sync' ), // %s is product name
+                'partial_success_text'     => __( '"%s" synced with some issues.', 'forbes-product-sync' ), // %s is product name
+
+                // Attribute Sync
+                'default_attribute_name'   => __( 'Attribute', 'forbes-product-sync' ),
+                // Note: 'syncing_text' and 'sync_text' can be reused for attributes.
             )
         );
         
@@ -188,19 +206,19 @@ class FPS_Admin {
                 <?php settings_fields( 'fps_settings' ); ?>
                 <table class="form-table" role="presentation">
                     <tr>
-                        <th scope="row"><label for="fps_remote_site_url">Remote Site URL</label></th>
+                        <th scope="row"><label for="fps_remote_site_url"><?php esc_html_e('Remote Site URL', 'forbes-product-sync'); ?></label></th>
                         <td>
                             <input name="fps_remote_site_url" type="url" id="fps_remote_site_url" value="<?php echo esc_attr( get_option( 'fps_remote_site_url', '' ) ); ?>" class="regular-text">
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row"><label for="fps_api_username">API Username/Key</label></th>
+                        <th scope="row"><label for="fps_api_username"><?php esc_html_e('API Username/Key', 'forbes-product-sync'); ?></label></th>
                         <td>
                             <input name="fps_api_username" type="text" id="fps_api_username" value="<?php echo esc_attr( get_option( 'fps_api_username', '' ) ); ?>" class="regular-text">
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row"><label for="fps_api_password">API Password/Token</label></th>
+                        <th scope="row"><label for="fps_api_password"><?php esc_html_e('API Password/Token', 'forbes-product-sync'); ?></label></th>
                         <td>
                             <input name="fps_api_password" type="password" id="fps_api_password" value="<?php echo esc_attr( get_option( 'fps_api_password', '' ) ); ?>" class="regular-text">
                         </td>
