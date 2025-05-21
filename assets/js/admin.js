@@ -142,7 +142,7 @@
                 },
                 success: function(response) {
                     $spinner.remove();
-                    $button.prop('disabled', false).text(originalButtonText); // Use original text
+                    $button.prop('disabled', false).text(originalButtonText); 
                     var message = '';
                     if (response.success) {
                         message = response.data.message || (attributeName + (fps_params.sync_success_generic || ' synced successfully.'));

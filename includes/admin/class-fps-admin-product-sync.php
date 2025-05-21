@@ -144,11 +144,34 @@ class FPS_Admin_Product_Sync {
                                     <th scope="col"><?php esc_html_e( 'Price', 'forbes-product-sync' ); ?></th>
                                     <th scope="col"><?php esc_html_e( 'Stock Status', 'forbes-product-sync' ); ?></th>
                                     <th scope="col"><?php esc_html_e( 'Variation Attributes', 'forbes-product-sync' ); ?></th>
+                                    <th scope="col"><?php esc_html_e( 'Local Status', 'forbes-product-sync' ); ?></th>
                                     <th scope="col"><?php esc_html_e( 'Actions', 'forbes-product-sync' ); ?></th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php foreach ( $products as $product ) : ?>
+                                    <?php
+                                    $local_status = __( 'New', 'forbes-product-sync' );
+                                    $local_status_class = 'fps-text-success'; // Green for New
+                                    $sync_button_text = __( 'Sync', 'forbes-product-sync' );
+                                    $sync_button_disabled = false;
+                                    $existing_local_id = null;
+
+                                    if ( ! empty( $product->sku ) ) {
+                                        $existing_local_id = wc_get_product_id_by_sku( $product->sku );
+                                        if ( $existing_local_id ) {
+                                            $local_status = __( 'Exists Locally', 'forbes-product-sync' );
+                                            $local_status_class = 'fps-text-warning'; // Orange for Exists
+                                            $sync_button_text = __( 'Skipped (Exists)', 'forbes-product-sync' );
+                                            $sync_button_disabled = true;
+                                        }
+                                    } else {
+                                        $local_status = __( 'No SKU', 'forbes-product-sync' );
+                                        $local_status_class = 'fps-text-error'; // Red for No SKU
+                                        $sync_button_text = __( 'Cannot Sync', 'forbes-product-sync' );
+                                        $sync_button_disabled = true;
+                                    }
+                                    ?>
                                     <tr>
                                         <td><?php echo esc_html( $product->name ?? '' ); ?></td>
                                         <td><?php echo esc_html( $product->sku ?? 'N/A' ); ?></td>
@@ -185,11 +208,13 @@ class FPS_Admin_Product_Sync {
                                             }
                                             ?>
                                         </td>
+                                        <td><span class="<?php echo esc_attr($local_status_class); ?>"><?php echo esc_html( $local_status ); ?></span></td>
                                         <td>
                                             <button type="button" class="button button-primary fps-sync-product-button" 
                                                     data-product-id="<?php echo esc_attr( $product->id ?? '' ); ?>" 
-                                                    data-product-name="<?php echo esc_attr( $product->name ?? '' ); ?>">
-                                                <?php esc_html_e( 'Sync', 'forbes-product-sync' ); ?>
+                                                    data-product-name="<?php echo esc_attr( $product->name ?? '' ); ?>"
+                                                    <?php if ($sync_button_disabled) echo 'disabled="disabled"'; ?>>
+                                                <?php echo esc_html( $sync_button_text ); ?>
                                             </button>
                                             <span class="fps-sync-status" style="margin-left: 5px;"></span>
                                         </td>

@@ -74,7 +74,7 @@
     width: 20px;
     height: 20px;
     margin: 0 5px; /* Added some margin for better spacing */
-    background: url(../../../wp-admin/images/spinner.gif) no-repeat;
+    background: url(../../../../wp-admin/images/spinner.gif) no-repeat;
     background-size: 20px 20px;
 }
 .fps-spinner.is-active {

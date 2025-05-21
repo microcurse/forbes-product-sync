@@ -12,22 +12,16 @@ defined( 'ABSPATH' ) || exit;
  */
 class FPS_AJAX {
     /**
-     * Hook in ajax handlers.
+     * Initialize AJAX handlers.
      */
     public static function init() {
-        add_action( 'init', array( __CLASS__, 'define_ajax' ) );
+        // The problematic action for define_ajax is now removed.
+
+        // Test connection AJAX handler
         add_action( 'wp_ajax_fps_test_connection', array( __CLASS__, 'test_connection' ) );
         add_action( 'wp_ajax_fps_sync_single_attribute', array( __CLASS__, 'sync_single_attribute' ) );
-        add_action( 'wp_ajax_fps_sync_single_product', array( __CLASS__, 'sync_single_product' ) ); // Removed duplicate
-    }
-
-    /**
-     * Set DOING_AJAX if wp_doing_ajax() is not available (before WP 4.7).
-     */
-    public static function define_ajax() {
-        if ( ! defined( 'DOING_AJAX' ) ) {
-            define( 'DOING_AJAX', true );
-        }
+        add_action( 'wp_ajax_fps_sync_single_product', array( __CLASS__, 'sync_single_product' ) );
+        add_action( 'wp_ajax_fps_clear_sync_logs', array( __CLASS__, 'clear_sync_logs' ) );
     }
 
     /**
@@ -107,29 +101,33 @@ class FPS_AJAX {
      */
     public static function sync_single_attribute() {
         check_ajax_referer( 'fps-admin-nonce', 'nonce' );
-        $action_item_name = 'Attribute ID: ' . (isset($_POST['attribute_id']) ? sanitize_text_field($_POST['attribute_id']) : 'N/A');
-        $source_attribute_id_for_log = isset($_POST['attribute_id']) ? sanitize_text_field($_POST['attribute_id']) : null;
+        $source_attribute_id = isset($_POST['attribute_id']) ? absint( $_POST['attribute_id'] ) : 0;
+        $action_item_name = 'Attribute Sync (Source ID: ' . $source_attribute_id . ')';
 
+        // Ensure wc-attribute-functions.php is loaded, as it contains wc_create_attribute, wc_attribute_taxonomy_name, etc.
+        if ( ! function_exists( 'wc_create_attribute' ) || ! function_exists( 'wc_attribute_taxonomy_name' ) || ! function_exists( 'wc_attribute_taxonomy_id_by_name' ) ) {
+            $wc_attribute_functions_path = WP_PLUGIN_DIR . '/woocommerce/includes/wc-attribute-functions.php';
+            if ( file_exists( $wc_attribute_functions_path ) ) {
+                include_once $wc_attribute_functions_path;
+            } else {
+                // This is a critical failure if the file is missing.
+                $error_msg = 'CRITICAL ERROR: The file woocommerce/includes/wc-attribute-functions.php was not found. Essential attribute functions are unavailable.';
+                FPS_Logger::log('attribute_sync', 'ERROR', $action_item_name, $error_msg, $source_attribute_id);
+                wp_send_json_error( array( 'message' => $error_msg ) );
+                return;
+            }
+        }
 
         if ( ! current_user_can( 'manage_options' ) ) {
             $error_msg = __( 'User does not have permission to manage options.', 'forbes-product-sync' );
-            FPS_Logger::log( 'attribute_sync', 'ERROR', $action_item_name, $error_msg, $source_attribute_id_for_log );
+            FPS_Logger::log( 'attribute_sync', 'ERROR', $action_item_name, $error_msg, $source_attribute_id );
             wp_send_json_error( array( 'message' => $error_msg ), 403 );
             return;
         }
 
-        if ( ! isset( $_POST['attribute_id'] ) ) {
-            $error_msg = __( 'Attribute ID not provided.', 'forbes-product-sync' );
-            FPS_Logger::log( 'attribute_sync', 'ERROR', $action_item_name, $error_msg, $source_attribute_id_for_log );
-            wp_send_json_error( array( 'message' => $error_msg ), 400 );
-            return;
-        }
-        $source_attribute_id = absint( $_POST['attribute_id'] );
-        $action_item_name = 'Attribute ID: ' . $source_attribute_id; // Update with actual ID
-
         if ( $source_attribute_id <= 0 ) {
-            $error_msg = __( 'Invalid Attribute ID.', 'forbes-product-sync' );
-            FPS_Logger::log( 'attribute_sync', 'ERROR', $action_item_name, $error_msg, $source_attribute_id_for_log );
+            $error_msg = __( 'Invalid or missing Attribute ID.', 'forbes-product-sync' );
+            FPS_Logger::log( 'attribute_sync', 'ERROR', $action_item_name, $error_msg, $source_attribute_id );
             wp_send_json_error( array( 'message' => $error_msg ), 400 );
             return;
         }
@@ -140,7 +138,7 @@ class FPS_AJAX {
 
         if ( empty( $remote_url ) || empty( $username ) || empty( $password ) ) {
             $error_msg = __( 'API credentials are not configured.', 'forbes-product-sync' );
-            FPS_Logger::log( 'attribute_sync', 'ERROR', $action_item_name, $error_msg, $source_attribute_id_for_log );
+            FPS_Logger::log( 'attribute_sync', 'ERROR', $action_item_name, $error_msg, $source_attribute_id );
             wp_send_json_error( array( 'message' => $error_msg ), 400 );
             return;
         }
@@ -148,18 +146,18 @@ class FPS_AJAX {
         $auth_header = 'Basic ' . base64_encode( $username . ':' . $password );
         $api_args = array(
             'headers'   => array( 'Authorization' => $auth_header ),
-            'timeout'   => 30,
+            'timeout'   => 45,
             'sslverify' => apply_filters( 'fps_sync_sslverify', true ),
         );
 
-        // 1. Fetch Attribute Details from Source
+        // 1. Fetch Attribute Details from Source (to get its slug and name)
         $attr_api_url = trailingslashit( $remote_url ) . "wp-json/wc/v3/products/attributes/{$source_attribute_id}";
         $attr_response = wp_remote_get( $attr_api_url, $api_args );
 
         if ( is_wp_error( $attr_response ) ) {
-            $error_msg = sprintf( __( 'Error fetching attribute details from %1$s: %2$s', 'forbes-product-sync' ), esc_url($attr_api_url), $attr_response->get_error_message() );
+            $error_msg = sprintf( __( 'Error fetching attribute details: %s', 'forbes-product-sync' ), $attr_response->get_error_message() );
             FPS_Logger::log( 'attribute_sync', 'ERROR', $action_item_name, $error_msg, $source_attribute_id );
-            wp_send_json_error( array( 'message' => $error_msg, 'status_code' => 'API_FETCH_ERROR_ATTRIBUTE_DETAILS' ) );
+            wp_send_json_error( array( 'message' => $error_msg ) );
             return;
         }
         $attr_response_code = wp_remote_retrieve_response_code( $attr_response );
@@ -167,28 +165,83 @@ class FPS_AJAX {
         if ( 200 !== $attr_response_code ) {
             $error_data = json_decode( $attr_response_body );
             $error_message_detail = isset($error_data->message) ? $error_data->message : wp_remote_retrieve_response_message( $attr_response );
-            $error_msg = sprintf( __( 'Error fetching attribute details from %1$s (HTTP %2$d): %3$s', 'forbes-product-sync' ), esc_url($attr_api_url), $attr_response_code, $error_message_detail );
-            FPS_Logger::log( 'attribute_sync', 'ERROR', $action_item_name, $error_msg, $source_attribute_id );
-            wp_send_json_error( array( 'message' => $error_msg, 'status_code' => 'API_FETCH_ERROR_ATTRIBUTE_DETAILS_HTTP', 'http_code' => $attr_response_code ) );
-            return;
-        }
-        $source_attribute = json_decode( $attr_response_body );
-        if ( ! $source_attribute || ! isset( $source_attribute->slug ) ) {
-            $error_msg = __( 'Invalid attribute data received from source.', 'forbes-product-sync' );
+            $error_msg = sprintf( __( 'Error fetching attribute details (HTTP %1$d): %2$s', 'forbes-product-sync' ), $attr_response_code, $error_message_detail );
             FPS_Logger::log( 'attribute_sync', 'ERROR', $action_item_name, $error_msg, $source_attribute_id );
             wp_send_json_error( array( 'message' => $error_msg ) );
             return;
         }
-        $action_item_name = $source_attribute->name ?? $action_item_name; // Update item name with actual name
+        $source_attribute_meta = json_decode( $attr_response_body );
+        if ( ! $source_attribute_meta || ! isset( $source_attribute_meta->slug ) ) {
+            $error_msg = __( 'Invalid attribute metadata received from source.', 'forbes-product-sync' );
+            FPS_Logger::log( 'attribute_sync', 'ERROR', $action_item_name, $error_msg, $source_attribute_id );
+            wp_send_json_error( array( 'message' => $error_msg ) );
+            return;
+        }
+        $action_item_name = $source_attribute_meta->name ?? $action_item_name;
+        
+        // Derive the base slug (e.g., 'laminate-color') from the source slug (which might be 'pa_laminate-color' or 'laminate-color')
+        $raw_source_slug = $source_attribute_meta->slug ?? '';
+        $base_attribute_slug = $raw_source_slug;
+        if ( strpos( $raw_source_slug, 'pa_' ) === 0 ) {
+            $base_attribute_slug = substr( $raw_source_slug, 3 );
+        }
+        // Ensure base_attribute_slug is not empty if raw_source_slug was just 'pa_' or empty after stripping
+        if ( empty($base_attribute_slug) && !empty($raw_source_slug) ) {
+             $base_attribute_slug = sanitize_title($source_attribute_meta->name ?? 'temp-attr-' . time()); // Fallback slug from name
+             FPS_Logger::log('attribute_sync', 'WARNING', $action_item_name, "Source slug ('{$raw_source_slug}') resulted in an empty base slug. Fallback to slug derived from name: '{$base_attribute_slug}'.", $source_attribute_id);
+        } else if (empty($base_attribute_slug) && empty($raw_source_slug)) {
+            $base_attribute_slug = sanitize_title($source_attribute_meta->name ?? 'temp-attr-' . time());
+            FPS_Logger::log('attribute_sync', 'WARNING', $action_item_name, "Source slug was empty. Fallback to slug derived from name: '{$base_attribute_slug}'.", $source_attribute_id);
+        }
 
-        // 2. Fetch Attribute Terms from Source
-        $terms_api_url = trailingslashit( $remote_url ) . "wp-json/wc/v3/products/attributes/{$source_attribute_id}/terms?per_page=100";
-        $terms_response = wp_remote_get( $terms_api_url, $api_args );
+        FPS_Logger::log('attribute_sync', 'INFO', $action_item_name, "Derived base_attribute_slug: '{$base_attribute_slug}' from raw_source_slug: '{$raw_source_slug}'", $source_attribute_id);
+
+        // Construct the REST base for the /wp/v2/ terms endpoint on the source site.
+        // It should be like 'pa_laminate-color'.
+        $base_slug_from_source_attr = $source_attribute_meta->slug;
+        if (strpos($base_slug_from_source_attr, 'pa_') === 0) {
+            // The slug from /wc/v3/products/attributes/{id} already starts with 'pa_'. Use it directly.
+            $source_rest_base_taxonomy_slug = $base_slug_from_source_attr;
+            FPS_Logger::log( 'attribute_sync', 'INFO', $action_item_name, "Source attribute slug '{$base_slug_from_source_attr}' already starts with 'pa_'. Using as is: '{$source_rest_base_taxonomy_slug}' for /wp/v2/ terms endpoint.", $source_attribute_id );
+        } else {
+            // The slug is a base slug (e.g., 'laminate-color'). Prepend 'pa_'.
+            $source_rest_base_taxonomy_slug = 'pa_' . $base_slug_from_source_attr;
+            FPS_Logger::log( 'attribute_sync', 'INFO', $action_item_name, "Source attribute slug is '{$base_slug_from_source_attr}'. Prepended 'pa_' to form: '{$source_rest_base_taxonomy_slug}' for /wp/v2/ terms endpoint.", $source_attribute_id );
+        }
+
+        // 2. Fetch Attribute Terms from Source using /wp/v2/ endpoint
+        $terms_api_url = trailingslashit( $remote_url ) . "wp-json/wp/v2/{$source_rest_base_taxonomy_slug}";
+        $terms_api_url_with_params = add_query_arg(array(
+            'per_page' => 100,
+            'context'  => 'edit' 
+        ), $terms_api_url);
+        
+        FPS_Logger::log( 'attribute_sync', 'INFO', $action_item_name, "Fetching terms from (context=edit): {$terms_api_url_with_params}", $source_attribute_id );
+
+        // --- IMPORTANT: Authentication Details for SOURCE SITE's /wp/v2/ Term Endpoints ---
+        // Replace with your actual admin username on portal.forbesindustries.com
+        $source_wp_admin_username = 'mmaninang'; 
+        // Replace with the Application Password you generated and successfully used in Postman
+        $source_wp_application_password = 'FJPc 9NGF 9LuG 7IRb dAvx ut1a'; 
+
+        $terms_api_args = array(
+            'headers' => array(
+                'Authorization' => 'Basic ' . base64_encode( $source_wp_admin_username . ':' . $source_wp_application_password ),
+                // It's good practice to set a User-Agent
+                'User-Agent'    => 'Forbes Product Sync Plugin/' . (defined('FPS_VERSION') ? FPS_VERSION : '1.0')
+            ),
+            'timeout'   => 45, // Increased timeout for potentially larger responses
+            'sslverify' => apply_filters( 'fps_sync_sslverify', true ), // Use existing filter, but ideally 'false' for local if issues
+        );
+        
+        FPS_Logger::log( 'attribute_sync', 'INFO', $action_item_name, "Request Args for terms: " . print_r(array_merge($terms_api_args, ['headers' => ['Authorization' => 'Basic [REDACTED]']]), true), $source_attribute_id );
+
+        $terms_response = wp_remote_get( $terms_api_url_with_params, $terms_api_args );
 
         if ( is_wp_error( $terms_response ) ) {
-            $error_msg = sprintf( __( 'Error fetching attribute terms for "%1$s" from %2$s: %3$s', 'forbes-product-sync' ), $action_item_name, esc_url($terms_api_url), $terms_response->get_error_message() );
+            $error_msg = sprintf( __( 'Error fetching terms for %1$s: %2$s', 'forbes-product-sync' ), $source_rest_base_taxonomy_slug, $terms_response->get_error_message());
             FPS_Logger::log( 'attribute_sync', 'ERROR', $action_item_name, $error_msg, $source_attribute_id );
-            wp_send_json_error( array( 'message' => $error_msg, 'status_code' => 'API_FETCH_ERROR_ATTRIBUTE_TERMS' ) );
+            wp_send_json_error( array( 'message' => $error_msg ) );
             return;
         }
         $terms_response_code = wp_remote_retrieve_response_code( $terms_response );
@@ -196,102 +249,151 @@ class FPS_AJAX {
         if ( 200 !== $terms_response_code ) {
             $error_data = json_decode( $terms_response_body );
             $error_message_detail = isset($error_data->message) ? $error_data->message : wp_remote_retrieve_response_message( $terms_response );
-            $error_msg = sprintf( __( 'Error fetching attribute terms for "%1$s" from %2$s (HTTP %3$d): %4$s', 'forbes-product-sync' ), $action_item_name, esc_url($terms_api_url), $terms_response_code, $error_message_detail );
+            $error_msg = sprintf( __( 'Error fetching terms for %1$s (HTTP %2$d): %3$s', 'forbes-product-sync' ), $source_rest_base_taxonomy_slug, $terms_response_code, $error_message_detail );
             FPS_Logger::log( 'attribute_sync', 'ERROR', $action_item_name, $error_msg, $source_attribute_id );
-            wp_send_json_error( array( 'message' => $error_msg, 'status_code' => 'API_FETCH_ERROR_ATTRIBUTE_TERMS_HTTP', 'http_code' => $terms_response_code ) );
+            wp_send_json_error( array( 'message' => $error_msg ) );
             return;
         }
         $source_terms = json_decode( $terms_response_body );
         if ( ! is_array( $source_terms ) ) {
-            $error_msg = sprintf(__( 'Invalid terms data received from source for attribute "%s".', 'forbes-product-sync' ), $action_item_name);
+            $error_msg = sprintf(__( 'Invalid terms data received for %1$s. Expected array. Body: %2$s', 'forbes-product-sync' ), $source_rest_base_taxonomy_slug, esc_html(substr($terms_response_body,0, 250)));
             FPS_Logger::log( 'attribute_sync', 'ERROR', $action_item_name, $error_msg, $source_attribute_id );
             wp_send_json_error( array( 'message' => $error_msg ) );
             return;
         }
 
-
         // 3. Process Attribute on Destination Site
         $local_attribute_id_for_log = null;
-        $local_attribute_id = wc_attribute_taxonomy_id_by_name( $source_attribute->slug );
+        $local_attribute_slug = $source_attribute_meta->slug;
+        $local_attribute_id = wc_attribute_taxonomy_id_by_name( $base_attribute_slug );
         $attribute_message = '';
 
         if ( ! $local_attribute_id ) {
             $args = array(
-                'name'         => $source_attribute->name,
-                'slug'         => $source_attribute->slug, 
-                'type'         => $source_attribute->type,
-                'order_by'     => $source_attribute->order_by,
-                'has_archives' => $source_attribute->has_archives,
+                'name'         => $source_attribute_meta->name,
+                'slug'         => $base_attribute_slug,
+                'type'         => $source_attribute_meta->type,
+                'order_by'     => $source_attribute_meta->order_by,
+                'has_archives' => $source_attribute_meta->has_archives,
             );
             $created_id = wc_create_attribute( $args );
 
             if ( is_wp_error( $created_id ) ) {
-                $error_msg = sprintf( __( 'Error creating attribute "%s": %s', 'forbes-product-sync' ), $source_attribute->name, $created_id->get_error_message() );
+                $error_msg = sprintf( __( 'Error creating attribute "%s": %s', 'forbes-product-sync' ), $source_attribute_meta->name, $created_id->get_error_message() );
                 FPS_Logger::log( 'attribute_sync', 'ERROR', $action_item_name, $error_msg, $source_attribute_id );
-                wp_send_json_error( array( 'message' => $error_msg, 'status_code' => 'ATTRIBUTE_CREATION_ERROR' ) );
+                wp_send_json_error( array( 'message' => $error_msg ) );
                 return;
             }
-            if ( $created_id === 0 ) { // Should ideally not happen if not WP_Error, but as a safeguard.
-                $error_msg = sprintf( __( 'Failed to create attribute "%s". wc_create_attribute returned 0.', 'forbes-product-sync' ), $source_attribute->name );
-                FPS_Logger::log( 'attribute_sync', 'ERROR', $action_item_name, $error_msg, $source_attribute_id );
-                wp_send_json_error( array( 'message' => $error_msg, 'status_code' => 'ATTRIBUTE_CREATION_FAILED' ) );
-                return;
-            }
+            $local_attribute_id = $created_id;
             $local_attribute_id_for_log = $created_id;
-            $attribute_message = sprintf( __( 'Attribute "%s" created. ', 'forbes-product-sync' ), $source_attribute->name );
+            $attribute_message = sprintf( __( 'Attribute "%s" created. ', 'forbes-product-sync' ), $source_attribute_meta->name );
         } else {
             $local_attribute_id_for_log = $local_attribute_id;
-            $attribute_message = sprintf( __( 'Attribute "%s" already exists. ', 'forbes-product-sync' ), $source_attribute->name );
+            $attribute_message = sprintf( __( 'Attribute "%s" already exists. ', 'forbes-product-sync' ), $source_attribute_meta->name );
         }
 
         // 4. Process Terms
-        $local_taxonomy_name = wc_attribute_taxonomy_name_by_slug( $source_attribute->slug ); // e.g. pa_color
+        $local_taxonomy_name = wc_attribute_taxonomy_name( $base_attribute_slug );
+
+        // Check if taxonomy name generation was successful (it should be if wc_attribute_taxonomy_name is loaded)
+        if ( empty( $local_taxonomy_name ) ) {
+            $error_msg = "Could not determine local taxonomy name for base slug: '{$base_attribute_slug}'. wc_attribute_taxonomy_name() might have failed or returned empty.";
+            FPS_Logger::log( 'attribute_sync', 'ERROR', $action_item_name, $error_msg, $source_attribute_id, $local_attribute_id_for_log );
+            wp_send_json_error( array( 'message' => $error_msg ) );
+            return;
+        }
+
         $terms_synced_count = 0;
-        $terms_existing_count = 0;
+        $terms_updated_count = 0;
+        $terms_failed_count = 0;
 
         foreach ( $source_terms as $source_term ) {
             if ( ! isset( $source_term->name ) || ! isset( $source_term->slug ) ) {
-                // Skip invalid term data
+                FPS_Logger::log( 'attribute_sync', 'WARNING', $action_item_name, "Skipping term with missing name or slug: " . print_r($source_term, true), $source_attribute_id );
+                $terms_failed_count++;
                 continue;
             }
-            $term_exists_check = term_exists( $source_term->name, $local_taxonomy_name );
+            
+            $term_data_for_log = sprintf("Source Term: Name='%s', Slug='%s', Suffix='%s', Price='%s', SwatchFullURL='%s'", 
+                $source_term->name, 
+                $source_term->slug,
+                $source_term->term_suffix ?? 'N/A',
+                $source_term->term_price ?? 'N/A',
+                isset($source_term->swatch_image_details->full_url) ? $source_term->swatch_image_details->full_url : 'N/A'
+            );
+            FPS_Logger::log( 'attribute_sync', 'INFO', $action_item_name, "Processing term data: {$term_data_for_log}", $source_attribute_id, $local_attribute_id_for_log );
+
+            $term_exists_check = term_exists( $source_term->slug, $local_taxonomy_name );
+            $local_term_id = 0;
 
             if ( ! $term_exists_check ) {
-                $new_term_args = array( 'slug' => $source_term->slug );
-                // Add description if available
-                if (isset($source_term->description) && !empty($source_term->description)) {
-                    $new_term_args['description'] = $source_term->description;
-                }
-
+                $new_term_args = array( 
+                    'slug' => $source_term->slug,
+                    'description' => $source_term->description ?? ''
+                );
                 $term_result = wp_insert_term( $source_term->name, $local_taxonomy_name, $new_term_args );
                 if ( is_wp_error( $term_result ) ) {
-                    $term_error_msg = sprintf(__( 'Error creating term "%1$s" for attribute "%2$s": %3$s', 'forbes-product-sync' ), $source_term->name, $action_item_name, $term_result->get_error_message());
+                    $term_error_msg = sprintf(__( 'Error creating term "%1$s": %2$s', 'forbes-product-sync' ), $source_term->name, $term_result->get_error_message());
                     FPS_Logger::log( 'attribute_sync', 'ERROR', $action_item_name, $term_error_msg, $source_attribute_id, $local_attribute_id_for_log );
-                    // Continue to next term, but log this error.
-                } elseif ( $term_result && isset( $term_result['term_id'] ) ) {
-                    $terms_synced_count++;
-                }
+                    $terms_failed_count++;
+                    continue;
+                } 
+                $local_term_id = $term_result['term_id'];
+                $terms_synced_count++;
+                FPS_Logger::log( 'attribute_sync', 'INFO', $action_item_name, "Created new term '{$source_term->name}' (ID: {$local_term_id}) for taxonomy '{$local_taxonomy_name}'.", $source_attribute_id, $local_attribute_id_for_log );
             } else {
-                $terms_existing_count++;
+                $local_term_id = $term_exists_check['term_id'];
+                $current_local_term = get_term($local_term_id, $local_taxonomy_name);
+                $update_args = array();
+                if ($current_local_term && $current_local_term->name !== $source_term->name) $update_args['name'] = $source_term->name;
+                if (isset($source_term->description) && $current_local_term && $current_local_term->description !== $source_term->description) $update_args['description'] = $source_term->description;
+                if (!empty($update_args) && $current_local_term) {
+                    wp_update_term($local_term_id, $local_taxonomy_name, $update_args);
+                }
+                $terms_updated_count++;
+                 FPS_Logger::log( 'attribute_sync', 'INFO', $action_item_name, "Found existing term '{$source_term->name}' (ID: {$local_term_id}) for taxonomy '{$local_taxonomy_name}'. Will update meta.", $source_attribute_id, $local_attribute_id_for_log );
+            }
+
+            if ( $local_term_id > 0 ) {
+                if ( isset( $source_term->term_price ) ) {
+                    update_term_meta( $local_term_id, 'term_price', sanitize_text_field( $source_term->term_price ) );
+                }
+                if ( isset( $source_term->term_suffix ) ) {
+                    update_term_meta( $local_term_id, '_term_suffix', sanitize_text_field( $source_term->term_suffix ) );
+                }
+                if ( isset( $source_term->swatch_image_details ) && isset($source_term->swatch_image_details->full_url) && !empty( $source_term->swatch_image_details->full_url ) ) {
+                    $image_url = $source_term->swatch_image_details->full_url;
+                    $image_desc = $source_term->name . ' Swatch';
+                    $attachment_id = self::_sideload_image( $image_url, 0, $image_desc );
+                    if ( ! is_wp_error( $attachment_id ) && $attachment_id > 0 ) {
+                        update_term_meta( $local_term_id, 'thumbnail_id', $attachment_id );
+                        FPS_Logger::log( 'attribute_sync', 'INFO', $action_item_name, "Updated swatch image (thumbnail_id: {$attachment_id}) for term '{$source_term->name}'.", $source_attribute_id, $local_attribute_id_for_log );
+                    } else {
+                        $image_error_msg = is_wp_error( $attachment_id ) ? $attachment_id->get_error_message() : 'Unknown error';
+                        FPS_Logger::log( 'attribute_sync', 'WARNING', $action_item_name, sprintf(__( 'Failed to sideload swatch image for term "%1$s" from %2$s: %3$s', 'forbes-product-sync' ), $source_term->name, $image_url, $image_error_msg), $source_attribute_id, $local_attribute_id_for_log );
+                        $terms_failed_count++;
+                    }
+                } else if (isset( $source_term->swatch_image_details ) && ( !isset($source_term->swatch_image_details->full_url) || empty( $source_term->swatch_image_details->full_url ) ) ) {
+                    delete_term_meta( $local_term_id, 'thumbnail_id' );
+                    FPS_Logger::log( 'attribute_sync', 'INFO', $action_item_name, "Removed swatch image (thumbnail_id) for term '{$source_term->name}' as source has no image URL or it is empty.", $source_attribute_id, $local_attribute_id_for_log );
+                }
             }
         }
         
         $final_message = $attribute_message;
-        if ( $terms_synced_count > 0 ) {
-            $final_message .= sprintf( _n( '%d term synced. ', '%d terms synced. ', $terms_synced_count, 'forbes-product-sync' ), $terms_synced_count );
-        }
-        if ( $terms_existing_count > 0 ) {
-             $final_message .= sprintf( _n( '%d term already existed.', '%d terms already existed.', $terms_existing_count, 'forbes-product-sync' ), $terms_existing_count );
-        }
-        if ( $terms_synced_count === 0 && $terms_existing_count === 0 && count($source_terms) > 0) {
-            $final_message .= __( 'No new terms to sync.', 'forbes-product-sync' );
+        if ( $terms_synced_count > 0 ) $final_message .= sprintf( _n( '%d term created. ', '%d terms created. ', $terms_synced_count, 'forbes-product-sync' ), $terms_synced_count );
+        if ( $terms_updated_count > 0 ) $final_message .= sprintf( _n( '%d term updated. ', '%d terms updated. ', $terms_updated_count, 'forbes-product-sync' ), $terms_updated_count );
+        if ( $terms_failed_count > 0 ) $final_message .= sprintf( _n( '%d term failed to sync completely. ', '%d terms failed to sync completely. ', $terms_failed_count, 'forbes-product-sync' ), $terms_failed_count );
+        
+        if ( $terms_synced_count === 0 && $terms_updated_count === 0 && $terms_failed_count === 0 && count($source_terms) > 0) {
+            $final_message .= __( 'All terms already up-to-date.', 'forbes-product-sync' );
         } elseif (count($source_terms) === 0) {
-            $final_message .= __( 'Attribute has no terms to sync.', 'forbes-product-sync' );
+            $final_message .= __( 'Attribute has no terms on source to sync.', 'forbes-product-sync' );
         }
-
 
         FPS_Logger::log( 'attribute_sync', 'SUCCESS', $action_item_name, trim($final_message), $source_attribute_id, $local_attribute_id_for_log );
-        wp_send_json_success( array( 'message' => trim($final_message), 'status_code' => 'SUCCESS' ) ); // Added status_code
+
+        wp_send_json_success( array( 'message' => trim($final_message) /* 'diagnostic_info' => $diagnostic_info */ ) ); // diagnostic_info removed
     }
 
     /**
@@ -302,7 +404,6 @@ class FPS_AJAX {
         $action_item_name = 'Product ID: ' . (isset($_POST['product_id']) ? sanitize_text_field($_POST['product_id']) : 'N/A');
         $source_product_id_for_log = isset($_POST['product_id']) ? sanitize_text_field($_POST['product_id']) : null;
         $product_name_for_log = isset($_POST['product_name']) ? sanitize_text_field($_POST['product_name']) : 'Product';
-
 
         if ( ! current_user_can( 'manage_options' ) ) {
             $error_msg = __( 'User does not have permission to perform this action.', 'forbes-product-sync' );
@@ -318,13 +419,11 @@ class FPS_AJAX {
             return;
         }
         $source_product_id = absint( $_POST['product_id'] );
-        // $action_item_name is defined above, but use $product_name_for_log for item name in logs before full data is fetched.
         $product_name_for_error = isset($_POST['product_name']) ? sanitize_text_field($_POST['product_name']) : 'Product (ID: ' . $source_product_id . ')';
-
 
         if ( $source_product_id <= 0 ) {
             $error_msg = __( 'Invalid Product ID provided.', 'forbes-product-sync' );
-            FPS_Logger::log('product_sync', 'ERROR', $product_name_for_error, $error_msg, $source_product_id_for_log); // Use $product_name_for_error
+            FPS_Logger::log('product_sync', 'ERROR', $product_name_for_error, $error_msg, $source_product_id_for_log);
             wp_send_json_error( array( 'message' => $error_msg, 'status_code' => 'INVALID_PRODUCT_ID' ), 400 );
             return;
         }
@@ -343,7 +442,7 @@ class FPS_AJAX {
         $auth_header = 'Basic ' . base64_encode( $username . ':' . $password );
         $api_args = array(
             'headers'   => array( 'Authorization' => $auth_header ),
-            'timeout'   => 60, 
+            'timeout'   => 60,
             'sslverify' => apply_filters( 'fps_product_sync_sslverify', true ),
         );
 
@@ -377,10 +476,10 @@ class FPS_AJAX {
             wp_send_json_error( array( 'message' => $error_msg, 'status_code' => 'API_INVALID_JSON_PRODUCT' ) );
             return;
         }
-        $product_name_for_log = $source_product_data->name ?? $product_name_for_error; // Update for subsequent logs
+        $product_name_for_log = $source_product_data->name ?? $product_name_for_error;
 
         if ( empty( $source_product_data->sku ) ) {
-            $error_msg = sprintf( __( 'Product "%1$s" (ID: %2$d) from source has no SKU. Cannot sync without an SKU.', 'forbes-product-sync' ), $product_name_for_log, $source_product_id ); // Use updated $product_name_for_log
+            $error_msg = sprintf( __( 'Product "%1$s" (ID: %2$d) from source has no SKU. Cannot sync without an SKU.', 'forbes-product-sync' ), $product_name_for_log, $source_product_id );
             FPS_Logger::log('product_sync', 'ERROR', $product_name_for_log, $error_msg, $source_product_id);
             wp_send_json_error( array( 'message' => $error_msg, 'status_code' => 'MISSING_SKU' ) );
             return;
@@ -390,7 +489,7 @@ class FPS_AJAX {
         if ( $existing_product_id ) {
             $skip_msg = sprintf( __( 'Product "%1$s" (SKU: %2$s) already exists locally (ID: %3$d). Skipping.', 'forbes-product-sync' ), $product_name_for_log, $source_product_data->sku, $existing_product_id );
             FPS_Logger::log('product_sync', 'SKIPPED', $product_name_for_log, $skip_msg, $source_product_id, $existing_product_id);
-            wp_send_json_error( array( 'message' => $skip_msg, 'status_code' => 'SKU_EXISTS' ) ); 
+            wp_send_json_error( array( 'message' => $skip_msg, 'status_code' => 'SKU_EXISTS' ) );
             return;
         }
         
@@ -445,12 +544,18 @@ class FPS_AJAX {
         $attributes_array = array();
         if ( ! empty( $source_product_data->attributes ) && is_array( $source_product_data->attributes ) ) {
             foreach ( $source_product_data->attributes as $source_attr ) {
-                if ( ! isset( $source_attr->name ) ) continue; 
+                if ( ! isset( $source_attr->name ) ) continue;
                 $attribute_slug = isset($source_attr->slug) && !empty($source_attr->slug) ? sanitize_title($source_attr->slug) : sanitize_title($source_attr->name);
                 $local_attr_taxonomy_id = wc_attribute_taxonomy_id_by_name( $attribute_slug );
                 $wc_product_attribute = new WC_Product_Attribute();
-                if ( $local_attr_taxonomy_id ) { 
-                    $taxonomy_name = wc_attribute_taxonomy_name_by_slug( $attribute_slug ); 
+                if ( $local_attr_taxonomy_id ) {
+                    $taxonomy_name = '';
+                    if ( function_exists( 'wc_attribute_taxonomy_name' ) ) {
+                        $taxonomy_name = wc_attribute_taxonomy_name( $attribute_slug );
+                    } else {
+                        FPS_Logger::log('product_sync', 'WARNING', $product_name_for_log, 'wc_attribute_taxonomy_name function not found. Attempting fallback for attribute taxonomy name for ' . $attribute_slug, $source_product_id);
+                        $taxonomy_name = 'pa_' . $attribute_slug;
+                    }
                     $wc_product_attribute->set_id( $local_attr_taxonomy_id );
                     $wc_product_attribute->set_name( $taxonomy_name );
                     $term_options_ids = array();
@@ -462,8 +567,8 @@ class FPS_AJAX {
                     }
                     $wc_product_attribute->set_options( $term_options_ids );
                 } else { 
-                    $wc_product_attribute->set_name( $source_attr->name ); 
-                    if ( ! empty( $source_attr->options ) && is_array( $source_attr->options ) ) $wc_product_attribute->set_options( $source_attr->options ); 
+                    $wc_product_attribute->set_name( $source_attr->name );
+                    if ( ! empty( $source_attr->options ) && is_array( $source_attr->options ) ) $wc_product_attribute->set_options( $source_attr->options );
                 }
                 $wc_product_attribute->set_visible( isset( $source_attr->visible ) ? (bool) $source_attr->visible : false );
                 $wc_product_attribute->set_variation( isset( $source_attr->variation ) ? (bool) $source_attr->variation : false );
@@ -527,7 +632,7 @@ class FPS_AJAX {
             if ( ! empty( $source_product_data->variations ) && is_array( $source_product_data->variations ) ) {
                 foreach ( $source_product_data->variations as $source_variation_id ) {
                     $variation_api_url = trailingslashit( $remote_url ) . "wp-json/wc/v3/products/{$source_product_id}/variations/{$source_variation_id}";
-                    $variation_response = wp_remote_get( $variation_api_url, $api_args ); 
+                    $variation_response = wp_remote_get( $variation_api_url, $api_args );
                     if ( is_wp_error( $variation_response ) ) {
                         $variations_failed_count++;
                         $variation_error_details[] = sprintf( __( 'Variation ID %d: API Error - %s', 'forbes-product-sync' ), $source_variation_id, $variation_response->get_error_message() );
@@ -553,13 +658,25 @@ class FPS_AJAX {
                     $mapped_variation_attributes = array();
                     if ( ! empty( $source_variation_data->attributes ) && is_array( $source_variation_data->attributes ) ) {
                         foreach ( $source_variation_data->attributes as $var_attr ) {
-                            if ( isset( $var_attr->slug ) && isset( $var_attr->option ) ) { 
-                                $local_attr_slug = $var_attr->slug; 
-                                if (strpos($local_attr_slug, 'pa_') !== 0) { 
-                                     $check_if_global_exists = wc_attribute_taxonomy_id_by_name($local_attr_slug);
-                                     if ($check_if_global_exists) $local_attr_slug = wc_attribute_taxonomy_name_by_slug($local_attr_slug); 
+                            if ( isset( $var_attr->slug ) && isset( $var_attr->option ) ) {
+                                $var_attribute_slug = $var_attr->slug;
+                                $var_attribute_option_slug = $var_attr->option; // This is usually the term slug
+
+                                // If $var_attr->slug is not prefixed with 'pa_', it might be a global attribute slug
+                                // or a local attribute name. We need the taxonomy name for set_attributes.
+                                $var_taxonomy_name = '';
+                                if (strpos($var_attribute_slug, 'pa_') === 0) {
+                                    $var_taxonomy_name = $var_attribute_slug;
+                                } else {
+                                    // It's a base slug like 'color', get the full taxonomy name
+                                    if ( function_exists( 'wc_attribute_taxonomy_name' ) ) {
+                                        $var_taxonomy_name = wc_attribute_taxonomy_name( $var_attribute_slug );
+                                    } else {
+                                        $var_taxonomy_name = 'pa_' . $var_attribute_slug;
+                                        FPS_Logger::log('product_sync', 'WARNING', $product_name_for_log, 'wc_attribute_taxonomy_name function not found. Attempting fallback for variation attribute taxonomy name for ' . $var_attribute_slug, $source_product_id);
+                                    }
                                 }
-                                $mapped_variation_attributes[ $local_attr_slug ] = $var_attr->option; 
+                                $mapped_variation_attributes[ $var_taxonomy_name ] = $var_attribute_option_slug;
                             }
                         }
                     }
@@ -584,7 +701,7 @@ class FPS_AJAX {
                         if ( ! is_wp_error( $var_image_id ) && $var_image_id > 0 ) {
                             $variation->set_image_id( $var_image_id );
                         } else {
-                             $image_errors_count++; // Also count variation image errors
+                             $image_errors_count++;
                              $var_error_msg_detail = is_wp_error( $var_image_id ) ? $var_image_id->get_error_message() : 'Unknown error during sideload';
                              $variation_error_details[] = sprintf(__( 'Variation ID %1$s, Image "%2$s": Sideload failed - %3$s', 'forbes-product-sync'), $source_variation_id, basename($source_variation_data->image->src), $var_error_msg_detail);
                         }
@@ -598,26 +715,44 @@ class FPS_AJAX {
                              $variation_error_details[] = sprintf(__( 'Variation ID %s: Failed to save (save() returned 0 or error).', 'forbes-product-sync'), $source_variation_id);
                         }
                     } catch (WC_Data_Exception $e) {
-                        $variations_failed_count++; 
+                        $variations_failed_count++;
                         $variation_error_details[] = sprintf(__( 'Variation ID %s: Save Exception - %s', 'forbes-product-sync'), $source_variation_id, $e->getMessage());
                     }
-                } 
-            } 
+                }
+            }
             if ($variations_synced_count > 0) $variation_sync_summary .= sprintf( _n( '%d variation synced. ', '%d variations synced. ', $variations_synced_count, 'forbes-product-sync' ), $variations_synced_count );
             if ($variations_failed_count > 0) $variation_sync_summary .= sprintf( _n( '%d variation failed. ', '%d variations failed. ', $variations_failed_count, 'forbes-product-sync' ), $variations_failed_count );
             if (empty($source_product_data->variations)) $variation_sync_summary .= __( 'No variations found on source to sync.', 'forbes-product-sync' );
-            $product->sync_prices();
-        } 
+            
+            // Sync prices for variable products
+            if ( $local_product_id > 0 && $product instanceof WC_Product_Variable ) {
+                // Ensure product is not null and is the correct type
+                $product_to_sync = wc_get_product($local_product_id);
+                if ($product_to_sync && $product_to_sync->is_type('variable')) {
+                    if ( method_exists( $product_to_sync, 'sync_prices' ) ) {
+                        $product_to_sync->sync_prices();
+                        FPS_Logger::log('product_sync', 'INFO', $product_to_sync->get_name(), 'Called $product->sync_prices()', $source_product_id, $local_product_id);
+                    } elseif ( function_exists( 'wc_product_variable_sync' ) ) {
+                        wc_product_variable_sync( $local_product_id );
+                        FPS_Logger::log('product_sync', 'INFO', $product_to_sync->get_name(), 'Called wc_product_variable_sync()', $source_product_id, $local_product_id);
+                    } else {
+                        FPS_Logger::log('product_sync', 'WARNING', $product_to_sync->get_name(), 'Could not find a standard method/function to sync variable product prices (e.g., $product->sync_prices(), wc_product_variable_sync()). Price sync might be incomplete.', $source_product_id, $local_product_id);
+                    }
+                } else {
+                     FPS_Logger::log('product_sync', 'WARNING', 'Product (ID: ' . $local_product_id . ')', 'Could not sync prices: Product not found or not a variable product after save.', $source_product_id, $local_product_id);
+                }
+            }
+        }
 
         $final_message = $main_product_message . (!empty($image_sync_messages) ? implode(' ', $image_sync_messages) . ' ' : '') . $variation_sync_summary;
         $log_status = ($image_errors_count > 0 || ($product_type === 'variable' && $variations_failed_count > 0)) ? 'PARTIAL_SUCCESS' : 'SUCCESS';
         
         FPS_Logger::log('product_sync', $log_status, $product->get_name(), trim($final_message . (!empty($variation_error_details) ? " Details: " . implode("; ", $variation_error_details) : "")), $source_product_id, $local_product_id);
         
-        $response_data = array( 
-            'message' => trim($final_message), 
+        $response_data = array(
+            'message' => trim($final_message),
             'local_product_id' => $local_product_id,
-            'status_code' => $log_status // To be used by JS for more specific feedback
+            'status_code' => $log_status
         );
         if (!empty($variation_error_details)) {
             $response_data['variation_error_details'] = $variation_error_details;
@@ -645,27 +780,67 @@ class FPS_AJAX {
             require_once ABSPATH . 'wp-admin/includes/image.php';
         }
 
-        // Set timeout for the sideloading request
-        add_filter( 'http_request_timeout', function() { return 60; } ); // 60 seconds
+        FPS_Logger::log('image_sideload', 'INFO', 'Attempting Sideload', 'Sideload attempt for URL: ' . $image_url . ' | Post ID: ' . $post_id . ' | Desc: ' . $desc);
 
+        // Check if image from this URL already exists
+        $existing_attachment_id = self::_find_existing_attachment_by_source_url( $image_url );
+        if ( $existing_attachment_id ) {
+            FPS_Logger::log('image_sideload', 'INFO', 'Existing Found', 'Found existing attachment ID: ' . $existing_attachment_id . ' for URL: ' . $image_url);
+            return $existing_attachment_id;
+        }
+        
+        FPS_Logger::log('image_sideload', 'INFO', 'No Existing', 'No existing attachment found for URL: ' . $image_url . '. Proceeding with new sideload.');
+
+        // Temporarily increase timeout for image sideloading
+        $original_timeout = ini_get('default_socket_timeout'); // Store original timeout
+        add_filter( 'http_request_timeout', function() { return 60; } );
+        
         $attachment_id = media_sideload_image( $image_url, $post_id, $desc, 'id' );
         
-        // Reset timeout to default
-        add_filter( 'http_request_timeout', function() { return 5; } );
-
-
-        if ( is_wp_error( $attachment_id ) ) {
-            // Log error or handle as needed
-            // error_log("Image sideloading failed for URL $image_url: " . $attachment_id->get_error_message());
+        // Restore original timeout
+        remove_all_filters( 'http_request_timeout' ); // Remove our filter
+        if ($original_timeout) {
+            // If there was an original timeout, try to set it back via a new filter if needed, 
+            // or ensure it's reset if http_request_args filter is used by WP core.
+            // For simplicity, we assume removing our filter is enough for most cases.
+            // If specific reset is needed: add_filter( 'http_request_timeout', function() use ($original_timeout) { return $original_timeout; } );
         }
+
+        if ( ! is_wp_error( $attachment_id ) && $attachment_id > 0 ) {
+            update_post_meta( $attachment_id, '_source_image_url', esc_url_raw( $image_url ) );
+            FPS_Logger::log('image_sideload', 'INFO', 'Meta Saved', 'Saved _source_image_url for new attachment ID: ' . $attachment_id . ' with URL: ' . esc_url_raw($image_url));
+        } else if (is_wp_error($attachment_id)) {
+            FPS_Logger::log('image_sideload', 'ERROR', 'Sideload Failed', 'media_sideload_image returned WP_Error: ' . $attachment_id->get_error_message() . ' for URL: ' . $image_url);
+        } else {
+            FPS_Logger::log('image_sideload', 'WARNING', 'Sideload Failed No Error', 'media_sideload_image did not return WP_Error but attachment_id is not > 0. Value: ' . print_r($attachment_id, true) . ' for URL: ' . $image_url);
+        }
+
         return $attachment_id;
+    }
+
+    /**
+     * Helper function to find an existing attachment ID by its source URL meta.
+     *
+     * @param string $image_url The source URL of the image.
+     * @return int Attachment ID if found, 0 otherwise.
+     */
+    private static function _find_existing_attachment_by_source_url( $image_url ) {
+        global $wpdb;
+        $escaped_url = esc_url_raw( $image_url );
+        $sql = $wpdb->prepare(
+            "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_source_image_url' AND meta_value = %s LIMIT 1",
+            $escaped_url
+        );
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+        $attachment_id = $wpdb->get_var( $sql );
+        return $attachment_id ? (int) $attachment_id : 0;
     }
 
     /**
      * Helper function to map term names to local term IDs for a given taxonomy, creating terms if they don't exist.
      *
-     * @param array  $term_names Array of term names.
-     * @param string $taxonomy   Taxonomy slug.
+     * @param array  $term_data_array Array of term objects from source (expected to have name, slug, description).
+     * @param string $taxonomy        Taxonomy slug.
      * @return array Array of local term IDs.
      */
     private static function _map_and_create_terms( $term_data_array, $taxonomy ) {
@@ -678,42 +853,32 @@ class FPS_AJAX {
             if ( !is_object($term_obj) || !isset($term_obj->name) ) continue;
             
             $term_name = $term_obj->name;
-            $term_slug = $term_obj->slug ?? ''; // Use slug from source if available
+            $term_slug = $term_obj->slug ?? sanitize_title($term_name);
 
-            $existing_term = get_term_by( 'name', $term_name, $taxonomy );
+            $existing_term = get_term_by( 'slug', $term_slug, $taxonomy );
+            if (!$existing_term) {
+                 $existing_term = get_term_by( 'name', $term_name, $taxonomy );
+            }
 
             if ( $existing_term ) {
                 $term_ids[] = $existing_term->term_id;
+                if (isset($term_obj->description) && $term_obj->description !== $existing_term->description) {
+                    wp_update_term($existing_term->term_id, $taxonomy, array('description' => $term_obj->description));
+                }
             } else {
-                // Term does not exist, create it
-                $args = array();
-                if (!empty($term_slug)) {
-                    $args['slug'] = $term_slug;
-                }
-                if (isset($term_obj->description)) {
-                     $args['description'] = $term_obj->description;
-                }
-                // Parent term handling (if 'parent' is provided and is an ID)
-                // This assumes parent terms are already synced or IDs are directly usable.
-                // For simplicity, direct parent ID mapping is not implemented here,
-                // but one could fetch parent term by source ID and map to local parent ID.
-                // if (isset($term_obj->parent) && is_numeric($term_obj->parent) && $term_obj->parent > 0) {
-                //     // Potentially map $term_obj->parent (source parent term ID) to a local parent term ID
-                //     // $args['parent'] = map_source_term_id_to_local_id($term_obj->parent, $taxonomy);
-                // }
-
+                $args = array(
+                    'slug' => $term_slug,
+                    'description' => $term_obj->description ?? '',
+                );
                 $new_term = wp_insert_term( $term_name, $taxonomy, $args );
                 if ( ! is_wp_error( $new_term ) && isset( $new_term['term_id'] ) ) {
                     $term_ids[] = $new_term['term_id'];
                 } else {
-                    // Log error: Failed to create term $term_name for taxonomy $taxonomy
-                    // error_log("Failed to create term '$term_name' for taxonomy '$taxonomy': " . (is_wp_error($new_term) ? $new_term->get_error_message() : 'Unknown error'));
+                    FPS_Logger::log('terms_mapping', 'ERROR', "Failed to create term '{$term_name}' (slug: {$term_slug}) for taxonomy '{$taxonomy}'", is_wp_error($new_term) ? $new_term->get_error_message() : 'Unknown error');
                 }
             }
         }
         return array_unique( $term_ids );
     }
 
-} // End FPS_AJAX class
-
-FPS_AJAX::init(); 
+} // End FPS_AJAX class 

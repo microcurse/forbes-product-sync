@@ -117,6 +117,5 @@ class FPS_Logger {
 }
 
 // Initialize the logger to set the table name early, though create_table also calls init.
-FPS_Logger::init();
 
 ?>

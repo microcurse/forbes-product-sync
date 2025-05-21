@@ -58,7 +58,7 @@ class FPS_Admin_Sync_Logs {
         <div class="wrap">
             <h1><?php echo esc_html( get_admin_page_title() ); ?></h1>
 
-            <form method="post" action="<?php echo esc_url( admin_url('admin.php?page=fps-sync-logs') ); ?>">
+            <form method="post" action="<?php echo esc_url( admin_url('admin.php?page=forbes-product-sync-logs') ); ?>">
                 <input type="hidden" name="fps_action" value="clear_logs">
                 <?php wp_nonce_field( 'fps_clear_logs_action', '_wpnonce_fps_clear_logs' ); ?>
                 <?php submit_button( __( 'Clear All Logs', 'forbes-product-sync' ), 'delete', 'clear_logs_button', false, array( 'onclick' => 'return confirm("' . esc_js( __( 'Are you sure you want to delete all logs? This action cannot be undone.', 'forbes-product-sync' ) ) . '");' ) ); ?>
@@ -84,7 +84,7 @@ class FPS_Admin_Sync_Logs {
             ) );
             
             if ( empty( $logs ) && $total_logs > 0 && $current_page > 1) {
-                wp_safe_redirect( admin_url('admin.php?page=fps-sync-logs') );
+                wp_safe_redirect( admin_url('admin.php?page=forbes-product-sync-logs') );
                 exit;
             }
             
@@ -136,13 +136,13 @@ class FPS_Admin_Sync_Logs {
                     echo '<span class="displaying-num">' . sprintf( esc_html__( 'Page %1$d of %2$d', 'forbes-product-sync' ), $current_page, $total_pages ) . '</span>';
                     
                     $page_links = paginate_links( array(
-                        'base'      => admin_url('admin.php?page=fps-sync-logs%_%'),
-                        'format'    => '&paged=%#%',
-                        'prev_text' => __( '&laquo; Previous', 'forbes-product-sync' ),
-                        'next_text' => __( 'Next &raquo;', 'forbes-product-sync' ),
-                        'total'     => $total_pages,
-                        'current'   => $current_page,
-                        'type'      => 'array',
+                        'base'         => add_query_arg( 'paged', '%#%' ), // %#% will be replaced with page number
+                        'format'       => '', // 'format' is not needed when 'base' is used like this
+                        'prev_text'    => __( '&laquo; Previous', 'forbes-product-sync' ),
+                        'next_text'    => __( 'Next &raquo;', 'forbes-product-sync' ),
+                        'total'        => $total_pages,
+                        'current'      => $current_page,
+                        'type'         => 'array',
                     ) );
 
                     if ( $page_links ) {
